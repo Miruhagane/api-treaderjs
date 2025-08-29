@@ -12,10 +12,14 @@
   "author": "Google LLC",
   "license": "Apache-2.0",
   "dependencies": {
+    "@typegoose/typegoose": "^12.19.0",
     "axios": "^1.7.9",
     "binance": "^3.0.6",
     "body-parser": "^2.2.0",
+    "dotenv": "^17.2.1",
     "express": "^4.21.2",
+    "mongodb": "^6.19.0",
+    "mongoose": "^8.18.0",
     "node-binance-api": "^1.0.12"
   },
   "devDependencies": {
