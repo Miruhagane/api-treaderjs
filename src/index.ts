@@ -18,7 +18,7 @@ app.get('/capital_balance', (req, res) => {
   res.send(accountBalance())
 })
 
-app.post('/capital_positio', async (req,res) => {
+app.post('/capital_position', async (req,res) => {
 
   const payload = req.body;
   console.log(payload)
