@@ -31,8 +31,10 @@ app.post('/capital_position', async (req,res) => {
   }
 })
 
-app.get('/binance', (req, res) => {
-  res.send(position())
+
+app.post('/binance', (req, res) => {
+  const payload = req.body;
+  res.send(position(payload.type))
 })
 
 
