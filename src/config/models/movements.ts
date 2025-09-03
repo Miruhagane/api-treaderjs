@@ -1,21 +1,24 @@
 import { getModelForClass, prop } from "@typegoose/typegoose";
 
-class movements {
+export class movements {
 
-    @prop()
+    @prop({ required: true })
     idRefBroker: string
 
-    @prop()
+    @prop({ required: true })
     strategy: string
 
-    @prop()
+    @prop({ required: true })
     open: boolean
 
-    @prop()
+    @prop({ required: true })
     broker: string
 
-    @prop()
+    @prop({ required: true })
     date: Date
+
+    @prop({ required: true })
+    myRegionalDate: Date
 }
 
 const movementsModel = getModelForClass(movements);

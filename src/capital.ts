@@ -4,6 +4,7 @@
 
 import axios, { AxiosRequestConfig } from "axios";
 import movementsModel from "./config/models/movements";
+import HistoryModel from "./config/models/history";
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -109,7 +110,6 @@ export const accountBalance = async () => {
  */
 export const positions = async (epic: string, size: number, type: string, strategy: string) => {
   const sesiondata = await login();
-
   switch (type) {
     case ('buy'):
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -136,6 +136,7 @@ export const positions = async (epic: string, size: number, type: string, strate
         await axios(options);
         const idactive: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST);
         await updateDbPositions(idactive, strategy, true, 'capital');
+        console.log("realizado")
         return "posicion abierta";
       } catch (error: any) {
         console.error('❌ Error:', error.response?.data || error.message);
@@ -160,9 +161,8 @@ export const positions = async (epic: string, size: number, type: string, strate
             console.error(`❌ Error closing position ${position.idRefBroker}:`, error.response?.data || error.message);
           }
         }
-        return "posiciones cerradas";
       }
-      break;
+      return "posiciones cerradas";
   }
 }
 
@@ -178,20 +178,44 @@ export const positions = async (epic: string, size: number, type: string, strate
  */
 async function updateDbPositions(id: string, strategy: string, open: boolean, broker: string) {
   if (open) {
+
     const m = await movementsModel.find({ idRefBroker: id });
     if (m.length === 0) {
+
+      let date = new Date()
       const newMovement = new movementsModel({
         idRefBroker: id,
         strategy: strategy,
         open: open,
         broker: broker,
-        date: new Date()
+        date: date,
+        myRegionalDate: date.setHours(date.getHours() - 5)
       });
-      await newMovement.save();
+      let r1 = await newMovement.save();
+
+      const newHistory = new HistoryModel({
+        idRefBroker: id,
+        event: 'buy',
+        movementRef: r1._id
+      })
+
+
+      await newHistory.save();
+
       return "creado y guardado";
     }
   } else {
     await movementsModel.updateOne({ idRefBroker: id }, { open: open });
+
+    let movent = await movementsModel.findOne({ idRefBroker: id });
+
+    const newHistory = new HistoryModel({
+      idRefBroker: id,
+      event: 'sell',
+      movementRef: movent._id
+    })
+
+    await newHistory.save();
     return "cerrado";
   }
 }
