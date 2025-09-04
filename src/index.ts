@@ -63,7 +63,8 @@ app.post('/capital_position', async (req, res) => {
  */
 app.post('/binance', (req, res) => {
   const payload = req.body;
-  res.send(position(payload.type));
+  const result = position(payload.type, payload.strategy);
+  res.send({data: result});
 });
 
 // Inicia el servidor en el puerto especificado por la variable de entorno o en el 3000 por defecto.

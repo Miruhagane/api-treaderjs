@@ -3,10 +3,12 @@
  */
 
 import axios, { AxiosRequestConfig } from "axios";
-import movementsModel from "./config/models/movements";
-import HistoryModel from "./config/models/history";
 import dotenv from 'dotenv';
 dotenv.config();
+
+import movementsModel from "./config/models/movements";
+import HistoryModel from "./config/models/history";
+import { errorSendEmail } from "./config/mail";
 
 // Constantes para la configuración de la API de Capital.com
 const API_KEY = process.env.Capital_ApiKey;
@@ -136,10 +138,12 @@ export const positions = async (epic: string, size: number, type: string, strate
         await axios(options);
         const idactive: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST);
         await updateDbPositions(idactive, strategy, true, 'capital');
-        console.log("realizado")
         return "posicion abierta";
       } catch (error: any) {
         console.error('❌ Error:', error.response?.data || error.message);
+
+        let mensaje = "error al realizar la compra en capital, estrategia:" + strategy
+        await errorSendEmail(mensaje, error.response?.data || error.message)
         return "Error al realizar la compra";
       }
 
@@ -159,6 +163,8 @@ export const positions = async (epic: string, size: number, type: string, strate
             await new Promise(resolve => setTimeout(resolve, 1000));
           } catch (error: any) {
             console.error(`❌ Error closing position ${position.idRefBroker}:`, error.response?.data || error.message);
+            let mensaje = "error al realizar la compra en capital, estrategia:" + strategy
+            await errorSendEmail(mensaje, error.response?.data || error.message)
           }
         }
       }

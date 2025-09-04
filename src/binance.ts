@@ -7,13 +7,17 @@ import Binance from 'node-binance-api';
 import dotenv from 'dotenv';
 dotenv.config();
 
+
+import movementsModel from "./config/models/movements";
+import HistoryModel from "./config/models/history";
+import { errorSendEmail } from "./config/mail";
 /**
  * @interface CryptoBalance
  * @description Define la estructura del balance de una criptomoneda, incluyendo lo disponible y lo que está en órdenes.
  */
 interface CryptoBalance {
-  available: string;
-  onOrder: string;
+    available: string;
+    onOrder: string;
 }
 
 /**
@@ -23,8 +27,8 @@ interface CryptoBalance {
  * @property {CryptoBalance} [BTC] - Balance específico para Bitcoin (opcional).
  */
 interface Balances {
-  [key: string]: CryptoBalance; // Índice de firma para cualquier propiedad
-  BTC?: CryptoBalance;          // Opcional
+    [key: string]: CryptoBalance; // Índice de firma para cualquier propiedad
+    BTC?: CryptoBalance;          // Opcional
 }
 
 // Inicializa el cliente de Binance con las claves de API desde las variables de entorno.
@@ -36,58 +40,89 @@ const binance = new Binance({
 
 /**
  * @async
- * @function setposition
- * @description Coloca una orden de compra o venta en Binance.
- * @param {string} side - El tipo de orden a ejecutar ('BUY' o 'SELL').
- * @param {number} price - El precio al cual ejecutar la orden (para órdenes de límite).
- * @returns {Promise<string | number>} Una promesa que se resuelve con un mensaje de éxito o un código de error 500.
- */
-async function setposition(side: string, price: number) {
-    let order: string = "0"
-    let balance: Balances = await binance.balance()
-
-    try {
-        switch (side.toUpperCase()) {
-            case 'BUY':
-                let order1 = await binance.order('LIMIT', 'BUY', 'BTCUSDT', 0.001, price)
-                console.log('orden nueva =>', order1)
-
-                let newbalance: Balances = await binance.balance();
-                console.log(newbalance.BTC)
-
-                return "compra hecha con exito"
-
-            case 'SELL':
-                if (balance.BTC !== undefined) {
-                    const sellOrder = await binance.marketSell("BTCUSDT", parseFloat(balance.BTC.available));
-                    console.log(sellOrder)
-                    let newbalance: Balances = await binance.balance();
-                    console.log(newbalance.BTC)
-
-                    return "cierre de posiciones completado"
-                }
-                break;
-        }
-
-        return order
-    } catch (err) {
-        console.error("Error creando Stop-Market:", err);
-        return 500
-    }
-}
-
-/**
- * @async
  * @function position
  * @description Obtiene el precio actual de BTCUSDT y ejecuta una orden de compra o venta.
  * @param {string} type - El tipo de operación a realizar ('BUY' o 'SELL').
  * @returns {Promise<string | number | undefined>} El resultado de la función setposition.
  */
-export const position = async (type: string) => {
-    let price = await binance.prices('BTCUSDT')
-    console.log(price.BTCUSDT)
+export const position = async (type: string, strategy: string) => {
 
-    if (price.BTCUSDT !== undefined) {
-        return setposition(type, price.BTCUSDT)
+    switch (type.toUpperCase()) {
+        case 'BUY':
+            try {
+
+                const order = await binance.marketBuy("BTCUSDT", 0.001)
+
+                const movements = new movementsModel({
+                    idRefBroker: order.orderId,
+                    strategy: strategy,
+                    open: true,
+                    broker: 'binance',
+                    date: new Date(),
+                    myRegionalDate: new Date().setHours(new Date().getHours() - 5)
+                })
+
+                let r1 = await movements.save();
+
+                const newHistory = new HistoryModel({
+                    idRefBroker: order.orderId,
+                    event: 'buy',
+                    movementRef: r1._id
+
+                })
+
+                await newHistory.save()
+
+
+                return "Orden completada"
+
+            }
+            catch (e) {
+                let asusnto = "error al generar la orden de binance, strategia:" + strategy;
+                await errorSendEmail(asusnto ,e.mensaje)
+                console.error(`❌ Error closing position ${e.message}:`)
+                return "error al generar la orden"
+            }
+            break;
+
+        case 'SELL':
+            try {
+                // Buscamos todas las órdenes de compra abiertas para la estrategia dada.
+                const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'binance' });
+
+                if (ordenes.length > 0) {
+                    // Usamos reduce para sumarizar la cantidad a vender de forma más limpia.
+                    const amountSell = ordenes.reduce((sum) => sum + 0.001, 0);
+
+                    // Ejecutamos la orden de venta en el mercado.
+                    const order = await binance.marketSell("BTCUSDT", amountSell);
+
+                    // Preparamos los IDs de las órdenes que vamos a cerrar.
+                    const idsToUpdate = ordenes.map(o => o._id);
+
+                    // Creamos las promesas para actualizar la base de datos y registrar el historial.
+                    const updatePromise = movementsModel.updateMany({ _id: { $in: idsToUpdate } }, { $set: { open: false } });
+                    const historyPromise = new HistoryModel({
+                        idRefBroker: order.orderId,
+                        event: 'sell',
+                        movementRef: idsToUpdate // Asumimos que movementRef puede guardar un array de IDs
+                    }).save();
+
+                    // Con Promise.all, esperamos a que ambas operaciones asíncronas terminen.
+                    await Promise.all([updatePromise, historyPromise]);
+
+                    return "Orden de venta completada y registros actualizados.";
+
+                } else {
+                    return "No hay órdenes abiertas para vender.";
+                }
+            } catch (e) {
+                let asusnto = "Error al generar la orden de venta en Binance, estrategia:" + strategy;
+                await errorSendEmail(asusnto ,e.mensaje)
+                console.error(`❌ Error closing position ${e.message}:`);
+                return "error al generar la orden de venta"
+            }
+            break;
     }
+
 }
