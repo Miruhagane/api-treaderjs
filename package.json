@@ -21,14 +21,14 @@
     "express": "^4.21.2",
     "mongodb": "^6.19.0",
     "mongoose": "^8.18.0",
-    "node-binance-api": "^1.0.12"
+    "node-binance-api": "^1.0.12",
+    "resend": "^6.0.2"
   },
   "devDependencies": {
     "@types/node": "^20.12.12",
     "nodemon": "^3.1.0",
     "npm-run-all": "^4.1.5",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.5"
-    
+    "typescript": "^5.9.2"
   }
 }
