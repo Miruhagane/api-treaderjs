@@ -6,6 +6,7 @@ Este proyecto es una API de trading desarrollada en Node.js, Express y TypeScrip
 
 - **Soporte Multi-Broker:** Conecta y opera en Binance y Capital.com a través de una única API.
 - **Base de Datos Persistente:** Utiliza MongoDB con Mongoose y Typegoose para registrar todos los movimientos y posiciones de trading.
+- **Gestión de Sesión Avanzada:** Incluye un sistema de gestión de sesiones para Capital.com que cachea los tokens de API en la base de datos. Esto evita errores de "Too Many Requests", mejora el rendimiento y asegura que las sesiones se reutilicen de manera eficiente.
 - **API RESTful:** Endpoints claros para gestionar balances y posiciones.
 - **Escrito en TypeScript:** Código tipado para mayor robustez y mantenibilidad.
 - **Listo para Pruebas:** Incluye una configuración básica de testing con Jest y Supertest.
@@ -50,6 +51,9 @@ Capital_identifier=TU_IDENTIFIER_DE_CAPITAL
 
 # Conexión a MongoDB
 MongoDb_Conection=mongodb://localhost:27017/trading_api
+
+# Clave de API de Resend para el envío de correos
+RESEND_API_KEY=TU_API_KEY_DE_RESEND
 ```
 
 ### 3. Ejecutar la Aplicación
@@ -73,8 +77,9 @@ Aquí están los endpoints disponibles en la API:
 |--------|-----------------------|--------------------------------------------------------------------------|--------------------------------------------------------------|
 | `GET`  | `/`                   | Endpoint de health check para verificar si el servidor está activo.      | N/A                                                          |
 | `GET`  | `/capital_balance`    | Obtiene el balance de la cuenta de Capital.com.                          | N/A                                                          |
+| `GET`  | `/capital_active`     | Verifica el estado de la sesión con Capital.com y devuelve los tokens.   | N/A                                                          |
 | `POST` | `/capital_position`   | Abre o cierra una posición en Capital.com.                               | `{ "epic": "BTCUSD", "size": 0.01, "type": "buy", "strategy": "ema_cross" }` |
-| `POST` | `/binance`            | Abre o cierra una posición en Binance.                                   | `{ "type": "BUY" }`                                          |
+| `POST` | `/binance`            | Abre o cierra una posición en Binance.                                   | `{ "type": "BUY", "strategy": "mi_estrategia" }`             |
 
 ## 🧪 Testing
 
@@ -83,3 +88,17 @@ Para ejecutar la suite de tests, utiliza el siguiente comando:
 ```sh
 npm test
 ```
+
+## 🏛️ Arquitectura y Decisiones de Diseño
+
+### Gestión de Sesión y Tokens
+
+Para evitar exceder los límites de solicitudes de la API de Capital.com y mejorar la eficiencia, se ha implementado un sistema de gestión de sesiones que utiliza la base de datos como caché.
+
+- **Modelo `Token`:** Se ha creado un modelo en `src/config/models/tokens.ts` que almacena los tokens de sesión (`CST` y `X-SECURITY-TOKEN`) junto con un `timestamp`.
+- **`sessionManager.ts`:** Este módulo (`src/config/sessionManager.ts`) se encarga de:
+  1.  Verificar si existe un token válido y no expirado en la base de datos.
+  2.  Si existe, lo devuelve para ser utilizado en las solicitudes a la API.
+  3.  Si no existe o ha expirado, solicita nuevos tokens a Capital.com, los guarda (o actualiza) en la base de datos y los devuelve.
+
+Este enfoque centralizado reduce drásticamente el número de inicios de sesión, solucionando el problema de `error.too-many.requests` y haciendo que la API sea más robusta y rápida.
