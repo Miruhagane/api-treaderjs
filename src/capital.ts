@@ -3,48 +3,16 @@
  */
 
 import axios, { AxiosRequestConfig } from "axios";
-import dotenv from 'dotenv';
-dotenv.config();
-
 import movementsModel from "./config/models/movements";
 import HistoryModel from "./config/models/history";
 import { errorSendEmail } from "./config/mail";
+import { getSession } from "./config/sessionManager";
 
-// Constantes para la configuración de la API de Capital.com
-const API_KEY = process.env.Capital_ApiKey;
-const capitalPassword = process.env.Capital_Password;
 const url_api = 'https://demo-api-capital.backend-capital.com/api/v1/';
-const identifier = process.env.Capital_identifier;
 
-/**
- * @async
- * @function login
- * @description Inicia sesión en la API de Capital.com para obtener los tokens de sesión.
- * @returns {Promise<object>} Un objeto que contiene los tokens CST y X-SECURITY-TOKEN.
- */
-async function login() {
-  const headers = {
-    'X-CAP-API-KEY': API_KEY,
-    'Content-Type': 'application/json',
-  };
-
-  const body = {
-    identifier: identifier,
-    password: capitalPassword,
-    encryptedPassword: false
-  };
-
-  const response = await axios.post(
-    `${url_api}session`,
-    body,
-    { headers }
-  );
-
-  let responseDataCapital = {
-    "CST": response.headers.cst,
-    "XSECURITYTOKEN": response.headers['x-security-token']
-  }
-  return responseDataCapital;
+export async function active(){
+    const sesiondata = await getSession();
+    return await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST);
 }
 
 /**
@@ -95,7 +63,7 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string) {
  * @returns {Promise<object>} El balance de las cuentas.
  */
 export const accountBalance = async () => {
-  const sesiondata = await login();
+  const sesiondata = await getSession();
   const accountBalance = await getAccountBalance(sesiondata.XSECURITYTOKEN, sesiondata.CST);
   return accountBalance.accounts;
 }
@@ -111,7 +79,7 @@ export const accountBalance = async () => {
  * @returns {Promise<string | undefined>} Un mensaje indicando el resultado de la operación.
  */
 export const positions = async (epic: string, size: number, type: string, strategy: string) => {
-  const sesiondata = await login();
+  const sesiondata = await getSession();
   switch (type) {
     case ('buy'):
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -152,6 +120,8 @@ export const positions = async (epic: string, size: number, type: string, strate
       if (m.length > 0) {
         for (const position of m) {
           try {
+
+            console.log(position.idRefBroker);
             await axios.delete(`${url_api}positions/${position.idRefBroker}`, {
               headers: {
                 'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
@@ -160,7 +130,6 @@ export const positions = async (epic: string, size: number, type: string, strate
               }
             });
             await updateDbPositions(position.idRefBroker, strategy, false, 'capital');
-            await new Promise(resolve => setTimeout(resolve, 1000));
           } catch (error: any) {
             console.error(`❌ Error closing position ${position.idRefBroker}:`, error.response?.data || error.message);
             let mensaje = "error al realizar la compra en capital, estrategia:" + strategy

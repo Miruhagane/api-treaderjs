@@ -8,7 +8,8 @@ import bodyParser from 'body-parser';
 import { dbconection } from './config/db';
 
 // Importa las funciones de los módulos de broker
-import { positions, accountBalance } from './capital';
+import { positions, accountBalance, active } from './capital';
+import { getSession } from './config/sessionManager';
 import { position } from './binance';
 
 const app = express();
