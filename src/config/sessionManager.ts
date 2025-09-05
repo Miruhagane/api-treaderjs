@@ -14,7 +14,7 @@ const capitalPassword = process.env.Capital_Password;
 const url_api = 'https://demo-api-capital.backend-capital.com/api/v1/';
 const identifier = process.env.Capital_identifier;
 
-const SESSION_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
+const SESSION_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
 
 /**
  * @async
