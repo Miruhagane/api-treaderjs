@@ -5,13 +5,25 @@
 
 import express from 'express';
 import bodyParser from 'body-parser';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import { dbconection } from './config/db';
+import cors from 'cors';
 
 // Importa las funciones de los módulos de broker
 import { positions, accountBalance, active } from './capital';
 import { position } from './binance';
+import { dashboard } from './config/db/dashboard';
 
 const app = express();
+app.use(cors());
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 
 // Establece la conexión con la base de datos
 dbconection();
@@ -47,7 +59,7 @@ app.post('/capital_position', async (req, res) => {
   const payload = req.body;
   console.log(payload);
   try {
-    let result = await positions(payload.epic, payload.size, payload.type, payload.strategy);
+    let result = await positions(payload.epic, payload.size, payload.type, payload.strategy, io);
     res.send({ data: result });
   } catch (e) {
     console.log(e);
@@ -63,12 +75,36 @@ app.post('/capital_position', async (req, res) => {
  */
 app.post('/binance', (req, res) => {
   const payload = req.body;
-  const result = position(payload.type, payload.strategy);
+  const result = position(payload.type, payload.strategy, io);
   res.send({data: result});
+});
+
+app.get('/datatable-dashboard', async (req, res) => {
+
+  console.log("ejecucion");
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 5;
+    const result = await dashboard(page, limit);
+    res.json(result);
+});
+
+app.get('/chart-data', async (req, res) => {
+   const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 5;
+    const result = await dashboard(page, limit);
+    res.json(result);
+});
+
+
+io.on('connection', (socket) => {
+  console.log('a user connected');
+  socket.on('disconnect', () => {
+    console.log('user disconnected');
+  });
 });
 
 // Inicia el servidor en el puerto especificado por la variable de entorno o en el 3000 por defecto.
 const port = parseInt(process.env.PORT || '3000');
-app.listen(port, () => {
+httpServer.listen(port, () => {
   console.log(`listening on port ${port}`);
 });
