@@ -11,6 +11,15 @@ export class movements {
     @prop({ required: true })
     open: boolean
 
+     @prop({ required: true })
+    buyPrice: number
+
+     @prop({ required: true })
+    sellPrice: number
+
+     @prop({ required: true })
+    ganancia: number
+
     @prop({ required: true })
     broker: string
 
