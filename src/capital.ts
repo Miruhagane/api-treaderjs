@@ -208,8 +208,8 @@ async function updateDbPositions(id: string, buyPrice: number, sellPrice: number
       return "creado y guardado";
     }
   } else {
-    let ganancia = (sellPrice * 0.001) - m[0].buyPrice;
-    await movementsModel.updateOne({ idRefBroker: id }, { open: open, sellPrice: (sellPrice * 0.001), ganancia: ganancia });
+    let ganancia = (sellPrice * 0.01) - m[0].buyPrice;
+    await movementsModel.updateOne({ idRefBroker: id }, { open: open, sellPrice: (sellPrice * 0.01), ganancia: ganancia });
 
     io.emit('dashboard_update', { type: 'sell', strategy: strategy });
     return "cerrado";
