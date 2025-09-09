@@ -11,7 +11,7 @@ import { dbconection } from './config/db';
 import cors from 'cors';
 
 // Importa las funciones de los módulos de broker
-import { positions, accountBalance, active } from './capital';
+import { positions, accountBalance } from './capital';
 import { position } from './binance';
 import { dashboard } from './config/db/dashboard';
 
@@ -48,6 +48,12 @@ app.get('/', (req, res) => {
 app.get('/capital_balance', (req, res) => {
   res.send(accountBalance());
 });
+
+
+app.post('/prueba', (req, res) => {
+  console.log("data")
+  return res.json({data: req.body});
+})
 
 /**
  * @route POST /capital_position
