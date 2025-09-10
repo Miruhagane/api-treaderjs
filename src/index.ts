@@ -13,7 +13,7 @@ import cors from 'cors';
 // Importa las funciones de los módulos de broker
 import { positions, accountBalance } from './capital';
 import { position } from './binance';
-import { dashboard } from './config/db/dashboard';
+import { dashboard, totalGananciaPorEstrategia } from './config/db/dashboard';
 
 const app = express();
 app.use(cors());
@@ -86,8 +86,6 @@ app.post('/binance', (req, res) => {
 });
 
 app.get('/datatable-dashboard', async (req, res) => {
-
-  console.log("ejecucion");
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 5;
     const result = await dashboard(page, limit);
@@ -101,6 +99,10 @@ app.get('/chart-data', async (req, res) => {
     res.json(result);
 });
 
+app.get('/total-ganancia-por-estrategia', async (req, res) => {
+    const result = await totalGananciaPorEstrategia();
+    res.json(result);
+});
 
 io.on('connection', (socket) => {
   console.log('a user connected');
