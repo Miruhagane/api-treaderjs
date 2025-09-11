@@ -13,7 +13,7 @@ import cors from 'cors';
 // Importa las funciones de los módulos de broker
 import { positions, accountBalance } from './capital';
 import { position } from './binance';
-import { dashboard } from './config/db/dashboard';
+import { dashboard, totalGananciaPorEstrategia, rendimientoPorDia, totalGananciaPorBroker } from './config/db/dashboard';
 
 const app = express();
 app.use(cors());
@@ -51,7 +51,7 @@ app.get('/capital_balance', (req, res) => {
 
 
 app.post('/prueba', (req, res) => {
-  console.log("data")
+  console.log("pruenaJson", req.body)
   return res.json({data: req.body});
 })
 
@@ -86,21 +86,27 @@ app.post('/binance', (req, res) => {
 });
 
 app.get('/datatable-dashboard', async (req, res) => {
-
-  console.log("ejecucion");
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 5;
     const result = await dashboard(page, limit);
     res.json(result);
 });
 
-app.get('/chart-data', async (req, res) => {
-   const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 5;
-    const result = await dashboard(page, limit);
+
+app.get('/ganancia_estrategia', async (req, res) => {
+    const result = await totalGananciaPorEstrategia();
     res.json(result);
 });
 
+app.get('/ganancia_broker', async (req, res) => {
+    const result = await totalGananciaPorBroker();
+    res.json(result);
+});
+
+app.get('/rendimiento_dia', async (req, res) => {
+    const result = await rendimientoPorDia();
+    res.json(result);
+});
 
 io.on('connection', (socket) => {
   console.log('a user connected');
