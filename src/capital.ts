@@ -56,7 +56,7 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string) {
   let activePositionslist = positionslist.data.positions;
 
   let response = {
-    buyprice: activePositionslist[activePositionslist.length - 1].position.level * 0.01,
+    buyprice: activePositionslist[activePositionslist.length - 1].position.level,
     id: activePositionslist[activePositionslist.length - 1].position.dealId
   }
 
@@ -158,7 +158,6 @@ export const positions = async (epic: string, size: number, type: string, strate
             });
 
             let singlePositionR = await singlePosition(response.data.dealReference);
-            console.log(singlePositionR)
             await updateDbPositions(position.idRefBroker, 0, singlePositionR, 0, strategy, false, 'capital', io);
           } catch (error: any) {
             console.error(`❌ Error closing position ${position.idRefBroker}:`, error.response?.data || error.message);
@@ -208,8 +207,8 @@ async function updateDbPositions(id: string, buyPrice: number, sellPrice: number
       return "creado y guardado";
     }
   } else {
-    let ganancia = (sellPrice * 0.01) - m[0].buyPrice;
-    await movementsModel.updateOne({ idRefBroker: id }, { open: open, sellPrice: (sellPrice * 0.01), ganancia: ganancia });
+    let ganancia = (sellPrice - m[0].buyPrice) * 0.01;
+    await movementsModel.updateOne({ idRefBroker: id }, { open: open, sellPrice: sellPrice, ganancia: ganancia });
 
     io.emit('dashboard_update', { type: 'sell', strategy: strategy });
     return "cerrado";
