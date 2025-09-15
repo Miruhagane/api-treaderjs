@@ -1,9 +1,9 @@
 import movementsModel from "../models/movements";
 
 
-export async function dashboard(page: number = 1, limit: number = 5) {
+export async function dashboard(page: number = 1, limit: number = 5, strategy?: string) {
     const skip = (page - 1) * limit;
-    const movements = await movementsModel.find().skip(skip).limit(limit).sort({ myRegionalDate: -1 });
+    const movements = await movementsModel.find({ strategy: strategy }).skip(skip).limit(limit).sort({ myRegionalDate: -1 });
     const totalMovements = await movementsModel.countDocuments();
     const totalPages = Math.ceil(totalMovements / limit);
 
@@ -14,9 +14,9 @@ export async function dashboard(page: number = 1, limit: number = 5) {
     };
 }
 
-export async function totalGananciaPorEstrategia() {
+export async function totalGananciaPorEstrategia(days: number) {
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - days);
     sevenDaysAgo.setHours(0, 0, 0, 0);
 
 
@@ -37,10 +37,10 @@ export async function totalGananciaPorEstrategia() {
     return result;
 }
 
-export async function totalGananciaPorBroker() {
+export async function totalGananciaPorBroker(days: number) {
 
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - days);
     sevenDaysAgo.setHours(0, 0, 0, 0);
 
     const result = await movementsModel.aggregate([
@@ -60,27 +60,4 @@ export async function totalGananciaPorBroker() {
 
     return result;
 
-}
-
-export async function rendimientoPorDia() {
-    const result = await movementsModel.aggregate([
-        {
-            $group: {
-                _id: {
-                    $dateToString: { format: "%Y-%m-%d", date: "$myRegionalDate" }
-                },
-                totalGanancia: { $sum: "$ganancia" }
-            }
-        },
-        {
-            $sort: {
-                _id: 1
-            }
-        }
-    ]);
-
-    return result.map(item => ({
-        date: item._id,
-        ganancia: item.totalGanancia
-    }));
 }

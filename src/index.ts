@@ -13,7 +13,7 @@ import cors from 'cors';
 // Importa las funciones de los módulos de broker
 import { positions, accountBalance } from './capital';
 import { position } from './binance';
-import { dashboard, totalGananciaPorEstrategia, rendimientoPorDia, totalGananciaPorBroker } from './config/db/dashboard';
+import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker } from './config/db/dashboard';
 
 const app = express();
 app.use(cors());
@@ -51,8 +51,8 @@ app.get('/capital_balance', (req, res) => {
 
 
 app.post('/prueba', (req, res) => {
-  console.log("pruenaJson", req.body)
-  return res.json({data: req.body});
+  console.log("pruenaJson", [req.body])
+  return res.json({ data: req.body });
 })
 
 /**
@@ -82,31 +82,31 @@ app.post('/capital_position', async (req, res) => {
 app.post('/binance', (req, res) => {
   const payload = req.body;
   const result = position(payload.type, payload.strategy, io);
-  res.send({data: result});
+  res.send({ data: result });
 });
 
 app.get('/datatable-dashboard', async (req, res) => {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 5;
-    const result = await dashboard(page, limit);
-    res.json(result);
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 5;
+  const strategy = req.query.strategy as string;
+  const result = await dashboard(page, limit, strategy);
+  res.json(result);
 });
 
 
 app.get('/ganancia_estrategia', async (req, res) => {
-    const result = await totalGananciaPorEstrategia();
-    res.json(result);
+  const days = parseInt(req.query.days as string) || 7;
+  const result = await totalGananciaPorEstrategia(days);
+  res.json(result);
 });
 
 app.get('/ganancia_broker', async (req, res) => {
-    const result = await totalGananciaPorBroker();
-    res.json(result);
+  const days = parseInt(req.query.days as string) || 7;
+  const result = await totalGananciaPorBroker(days);
+  res.json(result);
 });
 
-app.get('/rendimiento_dia', async (req, res) => {
-    const result = await rendimientoPorDia();
-    res.json(result);
-});
+
 
 io.on('connection', (socket) => {
   console.log('a user connected');
