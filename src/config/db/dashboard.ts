@@ -1,9 +1,16 @@
 import movementsModel from "../models/movements";
 
 
-export async function dashboard(page: number = 1, limit: number = 5) {
+export async function dashboard(page: number = 1, limit: number = 5, strategy?: string) {
     const skip = (page - 1) * limit;
-    const movements = await movementsModel.find().skip(skip).limit(limit).sort({ myRegionalDate: -1 });
+
+    let movements;
+    if (strategy === '' || strategy === undefined) {
+        movements = await movementsModel.find().skip(skip).limit(limit).sort({ myRegionalDate: -1 });
+    }
+    else {
+        movements = await movementsModel.find({ strategy: strategy }).skip(skip).limit(limit).sort({ myRegionalDate: -1 });
+    }
     const totalMovements = await movementsModel.countDocuments();
     const totalPages = Math.ceil(totalMovements / limit);
 
@@ -14,9 +21,9 @@ export async function dashboard(page: number = 1, limit: number = 5) {
     };
 }
 
-export async function totalGananciaPorEstrategia() {
+export async function totalGananciaPorEstrategia(days: number) {
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - days);
     sevenDaysAgo.setHours(0, 0, 0, 0);
 
 
@@ -37,10 +44,10 @@ export async function totalGananciaPorEstrategia() {
     return result;
 }
 
-export async function totalGananciaPorBroker() {
+export async function totalGananciaPorBroker(days: number) {
 
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - days);
     sevenDaysAgo.setHours(0, 0, 0, 0);
 
     const result = await movementsModel.aggregate([
@@ -62,25 +69,103 @@ export async function totalGananciaPorBroker() {
 
 }
 
-export async function rendimientoPorDia() {
-    const result = await movementsModel.aggregate([
+export async function gananciaAgrupadaPorEstrategia(days: number, periodo: 'mensual' | 'diario' = 'mensual') {
+    const dateLimit = new Date();
+    dateLimit.setDate(dateLimit.getDate() - days);
+    dateLimit.setHours(0, 0, 0, 0);
+
+    let groupById: any;
+    let sortById: any;
+    if (periodo === 'mensual') {
+        groupById = {
+            year: { $year: "$myRegionalDate" },
+            month: { $month: "$myRegionalDate" }
+        };
+        sortById = {
+            "_id.year": 1,
+            "_id.month": 1
+        };
+    } else { // diario
+        groupById = {
+            year: { $year: "$myRegionalDate" },
+            month: { $month: "$myRegionalDate" },
+            day: { $dayOfMonth: "$myRegionalDate" }
+        };
+        sortById = {
+            "_id.year": 1,
+            "_id.month": 1,
+            "_id.day": 1
+        };
+    }
+
+    const aggregationResult = await movementsModel.aggregate([
+        {
+            $match: {
+                myRegionalDate: { $gte: dateLimit }
+            }
+        },
         {
             $group: {
                 _id: {
-                    $dateToString: { format: "%Y-%m-%d", date: "$myRegionalDate" }
+                    ...groupById,
+                    strategy: "$strategy"
                 },
                 totalGanancia: { $sum: "$ganancia" }
             }
         },
         {
-            $sort: {
-                _id: 1
+            $group: {
+                _id: {
+                    year: "$_id.year",
+                    month: "$_id.month",
+                    ...(periodo === 'diario' && { day: "$_id.day" })
+                },
+                strategies: {
+                    $push: {
+                        strategy: "$_id.strategy",
+                        totalGanancia: "$totalGanancia"
+                    }
+                }
             }
+        },
+        {
+            $sort: sortById
         }
     ]);
 
-    return result.map(item => ({
-        date: item._id,
-        ganancia: item.totalGanancia
-    }));
+    // Format the data to match the desired JSON structure
+    const formattedResult = aggregationResult.map(item => {
+
+        const year = item._id.year;
+        const month = item._id.month - 1;
+        const day = periodo === 'diario' ? item._id.day : 1;
+        const date = new Date(year, month, day);
+
+
+        let formattedDate: string;
+        if (periodo === 'mensual') {
+            formattedDate = date.toLocaleString('en-US', { month: 'short' }) + ' ' + date.getFullYear().toString().slice(-2);
+        } else {
+            formattedDate = date.toLocaleString('en-US', { month: 'short', day: '2-digit' }) + ' ' + date.getFullYear().toString().slice(-2);
+        }
+
+        const dataEntry: { [key: string]: any } = {
+            date: formattedDate,
+            estrategias: []
+        };
+
+
+
+        item.strategies.forEach((s: any) => {
+            let estrategiaFormateada = {
+                estrategia: s.strategy.toUpperCase(),
+                ganancia: s.totalGanancia.toFixed(2)
+            }
+            dataEntry.estrategias.push(estrategiaFormateada);
+        });
+
+        return dataEntry;
+    });
+
+    return formattedResult;
 }
