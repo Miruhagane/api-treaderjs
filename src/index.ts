@@ -13,7 +13,7 @@ import cors from 'cors';
 // Importa las funciones de los módulos de broker
 import { positions, accountBalance } from './capital';
 import { position } from './binance';
-import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker } from './config/db/dashboard';
+import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia } from './config/db/dashboard';
 
 const app = express();
 app.use(cors());
@@ -51,8 +51,8 @@ app.get('/capital_balance', (req, res) => {
 
 
 app.post('/prueba', (req, res) => {
-  console.log("pruenaJson", [req.body])
-  return res.json({ data: req.body });
+  console.log(req.body);
+  return res.json(req.body);
 })
 
 /**
@@ -88,7 +88,7 @@ app.post('/binance', (req, res) => {
 app.get('/datatable-dashboard', async (req, res) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 5;
-  const strategy = req.query.strategy as string;
+  const strategy = req.query.strategy as string || '';
   const result = await dashboard(page, limit, strategy);
   res.json(result);
 });
@@ -100,9 +100,16 @@ app.get('/ganancia_estrategia', async (req, res) => {
   res.json(result);
 });
 
+app.get('/ganancia_linechart', async (req, res) => {
+  const days = parseInt(req.query.days as string) || 7;
+  const periodo = (req.query.periodo as 'mensual' | 'diario') || 'mensual';
+  const result = await gananciaAgrupadaPorEstrategia(days, periodo);
+  res.json(result);
+})
+
 app.get('/ganancia_broker', async (req, res) => {
   const days = parseInt(req.query.days as string) || 7;
-  const result = await totalGananciaPorBroker(days);
+  const result = await totalGananciaPorBroker(days,);
   res.json(result);
 });
 

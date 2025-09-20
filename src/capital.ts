@@ -11,11 +11,6 @@ import { dashboard } from "./config/db/dashboard";
 
 const url_api = 'https://demo-api-capital.backend-capital.com/api/v1/';
 
-export async function active() {
-  const sesiondata = await getSession();
-  return await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST);
-}
-
 /**
  * @async
  * @function getAccountBalance
@@ -44,8 +39,9 @@ async function getAccountBalance(token: string, cst: string) {
  * @param {string} CST - El token CST.
  * @returns {Promise<string>} El ID de la última posición activa.
  */
-async function allActivePositions(XSECURITYTOKEN: string, CST: string) {
-  const positionslist = await axios.get(`${url_api}positions`, {
+async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: string) {
+
+  const positionslist = await axios.get(`${url_api}confirms/${id}`, {
     headers: {
       'X-SECURITY-TOKEN': XSECURITYTOKEN,
       'CST': CST,
@@ -53,11 +49,11 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string) {
     }
   });
 
-  let activePositionslist = positionslist.data.positions;
+  let activePositionslist = positionslist.data;
 
   let response = {
-    buyprice: activePositionslist[activePositionslist.length - 1].position.level,
-    id: activePositionslist[activePositionslist.length - 1].position.dealId
+    buyprice: activePositionslist.level,
+    id: activePositionslist.affectedDeals[0].dealId
   }
 
   return response
@@ -113,7 +109,7 @@ export const positions = async (epic: string, size: number, type: string, strate
       const payloadCompra = {
         epic,
         direction: type.toUpperCase(),
-        size: 0.01,
+        size: size === 0.01 ? size.toString() : 0.001,
         orderType: 'MARKET',
         currencyCode: 'USD',
       };
@@ -130,9 +126,10 @@ export const positions = async (epic: string, size: number, type: string, strate
       };
 
       try {
-        await axios(options);
+        let r = await axios(options);
 
-        const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST);
+        const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
+
         await updateDbPositions(active.id, active.buyprice, 0, 0, strategy, true, 'capital', io);
         return "posicion abierta";
       } catch (error: any) {
@@ -157,6 +154,7 @@ export const positions = async (epic: string, size: number, type: string, strate
               }
             });
 
+            console.log(response)
             let singlePositionR = await singlePosition(response.data.dealReference);
             await updateDbPositions(position.idRefBroker, 0, singlePositionR, 0, strategy, false, 'capital', io);
           } catch (error: any) {
@@ -169,6 +167,7 @@ export const positions = async (epic: string, size: number, type: string, strate
       return "posiciones cerradas";
   }
 }
+
 
 /**
  * @async
@@ -214,6 +213,8 @@ async function updateDbPositions(id: string, buyPrice: number, sellPrice: number
     return "cerrado";
   }
 }
+
+
 
 /**
  * @function venta
