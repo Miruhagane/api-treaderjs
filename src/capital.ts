@@ -73,7 +73,6 @@ export const accountBalance = async () => {
 
 
 export const singlePosition = async (reference: string) => {
-  console.log("consultando posicion", reference)
   try {
     const sesiondata = await getSession();
     let response = await axios.get(`${url_api}confirms/${reference}`, {
@@ -154,7 +153,6 @@ export const positions = async (epic: string, size: number, type: string, strate
               }
             });
 
-            console.log(response)
             let singlePositionR = await singlePosition(response.data.dealReference);
             await updateDbPositions(position.idRefBroker, 0, singlePositionR, 0, strategy, false, 'capital', io);
           } catch (error: any) {
@@ -206,7 +204,15 @@ async function updateDbPositions(id: string, buyPrice: number, sellPrice: number
       return "creado y guardado";
     }
   } else {
-    let ganancia = (sellPrice - m[0].buyPrice) * 0.01;
+
+    let strategyS = ["Enhanced MACD", "crybaby"]
+
+    let size = 0.01
+
+    if (strategyS.includes(strategy) !== true) {
+      size = 0.001
+    }
+    let ganancia = (sellPrice - m[0].buyPrice) * size;
     await movementsModel.updateOne({ idRefBroker: id }, { open: open, sellPrice: sellPrice, ganancia: ganancia });
 
     io.emit('dashboard_update', { type: 'sell', strategy: strategy });
