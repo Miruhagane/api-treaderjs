@@ -11,6 +11,6 @@ export const errorSendEmail = async(asunto: string, mensaje: string) => {
   from: 'onboarding@resend.dev',
   to: 'ricardokurosaki23@gmail.com',
   subject: asunto,
-  html: '<p><strong>Hubo un error en el servidor</strong>! </p>' + '<p>' + mensaje + '</p' 
+  html: `<p><strong>Hubo un error en el servidor</strong>!</p><pre>${mensaje}</pre>`
 });
 }

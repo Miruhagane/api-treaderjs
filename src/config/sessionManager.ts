@@ -6,6 +6,7 @@
 
 import axios from "axios";
 import dotenv from 'dotenv';
+import cron from 'node-cron';
 import TokenModel from "./models/tokens";
 dotenv.config();
 
@@ -14,7 +15,7 @@ const capitalPassword = process.env.Capital_Password;
 const url_api = 'https://demo-api-capital.backend-capital.com/api/v1/';
 const identifier = process.env.Capital_identifier;
 
-const SESSION_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
+const SESSION_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 /**
  * @async
@@ -70,3 +71,8 @@ export async function getSession() {
 
     return updatedToken;
 }
+
+cron.schedule('*/5 * * * *', async () => {
+    console.log("ejecuto el cron")
+   await getSession()
+});
