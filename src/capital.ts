@@ -141,10 +141,11 @@ export const positions = async (epic: string, size: number, type: string, strate
 
     case ('sell'):
       const m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' });
+      let idref = ''
       if (m.length > 0) {
         for (const position of m) {
           try {
-
+            idref = `error al realizar el delete en capital, id: ${position.idRefBroker}}`;
             let response = await axios.delete(`${url_api}positions/${position.idRefBroker}`, {
               headers: {
                 'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
@@ -156,9 +157,12 @@ export const positions = async (epic: string, size: number, type: string, strate
             let singlePositionR = await singlePosition(response.data.dealReference);
             await updateDbPositions(position.idRefBroker, 0, singlePositionR, 0, strategy, false, 'capital', io);
           } catch (error: any) {
-            console.error(`❌ Error closing position ${position.idRefBroker}:`, error.response?.data || error.message);
-            let mensaje = "error al realizar la compra en capital, estrategia:" + strategy
+            console.error(`❌ Error closing position ${position.idRefBroker}:`, idref);
+            let mensaje = "error al realizar el cierre en capital, estrategia:" + strategy
             await errorSendEmail(mensaje, error.response?.data || error.message)
+            await idrefVerification(position.idRefBroker, strategy)
+
+            return "Error al cerrar la posición";
           }
         }
       }
@@ -221,16 +225,47 @@ async function updateDbPositions(id: string, buyPrice: number, sellPrice: number
 }
 
 
+export async function idrefVerification(id, strategy) {
 
-/**
- * @function venta
- * @description Función de marcador de posición para una operación de venta. Parece estar incompleta.
- * @returns {object} Un objeto con un mensaje de éxito estático.
- */
-export const venta = () => {
-  return {
-    status: 'success',
-    message: 'compra Realizada con exito',
-    timeStamp: new Date()
+  try {
+    const sesiondata = await getSession();
+    let strategyS = ["Enhanced MACD", "crybaby"]
+
+    if (strategyS.includes(strategy)) {
+
+      let posicionError = await movementsModel.find({ idRefBroker: id, strategy: strategy });
+
+      let positionslist = await axios.get(`${url_api}positions/`, {
+        headers: {
+          'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
+          'CST': sesiondata.CST,
+          'Content-Type': 'application/json',
+        }
+      })
+
+      for (let position of positionslist.data.positions) {
+        if (position.position.dealId !== id && position.market.epic === "US100") {
+          let response = await axios.delete(`${url_api}positions/${position.position.dealId}`, {
+            headers: {
+              'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
+              'CST': sesiondata.CST,
+              'Content-Type': 'application/json',
+            }
+          });
+          let singlePositionR = await singlePosition(response.data.dealReference);
+          let ganancia = (singlePositionR - posicionError[0].buyPrice) * 0.01;
+          await movementsModel.updateOne({ _id: posicionError[0]._id }, { open: false, idRefBroker: position.position.dealId, sellPrice: singlePositionR, ganancia: ganancia })
+          console.info(`error corregido nuevo idref: ${position.position.dealId}`)
+          return `error corregido nuevo idref: ${position.position.dealId}`
+        }
+      }
+    }
+  }
+  catch (e: any) {
+    console.error("error al reinterntar el cierre en capital estrategia:" + strategy + " id:" + id);
+    let asunto = "error al reintentar el cierre en capital, estrategia:" + strategy
+    let mensaje = `id: ${id}`
+
+    await errorSendEmail(asunto, mensaje)
   }
 }

@@ -11,7 +11,7 @@ import { dbconection } from './config/db';
 import cors from 'cors';
 
 // Importa las funciones de los módulos de broker
-import { positions, accountBalance } from './capital';
+import { positions, accountBalance, idrefVerification } from './capital';
 import { position } from './binance';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia } from './config/db/dashboard';
 
@@ -50,9 +50,12 @@ app.get('/capital_balance', (req, res) => {
 });
 
 
-app.post('/prueba', (req, res) => {
+app.post('/prueba', async (req, res) => {
   console.log(req.body);
-  return res.json(req.body);
+  const payload = req.body;
+
+  let r = await idrefVerification(payload.id, payload.strategy)
+  return r;
 })
 
 /**
