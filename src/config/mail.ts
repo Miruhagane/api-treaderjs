@@ -6,6 +6,11 @@ dotenv.config();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 
+/**
+ * Sends an email with an error message.
+ * @param asunto - The subject of the email.
+ * @param mensaje - The error message to be sent.
+ */
 export const errorSendEmail = async(asunto: string, mensaje: string) => {
     resend.emails.send({
   from: 'onboarding@resend.dev',

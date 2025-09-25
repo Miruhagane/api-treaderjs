@@ -15,9 +15,9 @@ const url_api = 'https://demo-api-capital.backend-capital.com/api/v1/';
  * @async
  * @function getAccountBalance
  * @description Obtiene el balance de la cuenta de Capital.com.
- * @param {string} token - El token de seguridad (X-SECURITY-TOKEN).
- * @param {string} cst - El token CST.
- * @returns {Promise<object>} Los datos del balance de la cuenta.
+ * @param {string} token - El token de seguridad (X-SECURITY-TOKEN) para la autenticación.
+ * @param {string} cst - El token CST para la autenticación.
+ * @returns {Promise<object>} Los datos del balance de la cuenta, incluyendo información de las cuentas.
  */
 async function getAccountBalance(token: string, cst: string) {
   const response = await axios.get(`${url_api}accounts`, {
@@ -34,10 +34,11 @@ async function getAccountBalance(token: string, cst: string) {
 /**
  * @async
  * @function allActivePositions
- * @description Obtiene todas las posiciones activas y devuelve el ID de la última posición.
- * @param {string} XSECURITYTOKEN - El token de seguridad.
- * @param {string} CST - El token CST.
- * @returns {Promise<string>} El ID de la última posición activa.
+ * @description Obtiene los detalles de una posición activa específica utilizando su ID de referencia.
+ * @param {string} XSECURITYTOKEN - El token de seguridad (X-SECURITY-TOKEN) para la autenticación.
+ * @param {string} CST - El token CST para la autenticación.
+ * @param {string} id - El ID de referencia de la posición a buscar.
+ * @returns {Promise<{buyprice: number, id: string}>} Un objeto con el precio de compra y el ID de la posición.
  */
 async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: string) {
 
@@ -62,8 +63,8 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: strin
 /**
  * @async
  * @function accountBalance
- * @description Exporta una función que obtiene y devuelve el balance de las cuentas.
- * @returns {Promise<object>} El balance de las cuentas.
+ * @description Obtiene el balance de las cuentas del usuario autenticado en Capital.com.
+ * @returns {Promise<object>} El balance de las cuentas del usuario.
  */
 export const accountBalance = async () => {
   const sesiondata = await getSession();
@@ -71,7 +72,13 @@ export const accountBalance = async () => {
   return accountBalance.accounts;
 }
 
-
+/**
+ * @async
+ * @function singlePosition
+ * @description Obtiene el nivel (precio) de una posición individual utilizando su referencia.
+ * @param {string} reference - La referencia de la operación para obtener el nivel.
+ * @returns {Promise<number | undefined>} El nivel de la posición o undefined si ocurre un error.
+ */
 export const singlePosition = async (reference: string) => {
   try {
     const sesiondata = await getSession();
@@ -85,20 +92,21 @@ export const singlePosition = async (reference: string) => {
     return response.data.level;
   }
   catch (error: any) {
-
+    console.error("Error fetching single position:", error.message);
+    return undefined;
   }
 };
 
 /**
  * @async
  * @function positions
- * @description Abre o cierra posiciones en Capital.com y actualiza la base de datos.
+ * @description Abre o cierra posiciones en Capital.com y actualiza la base de datos de movimientos.
  * @param {string} epic - El identificador del instrumento (ej. 'BTCUSD').
- * @param {number} size - El tamaño de la posición.
- * @param {string} type - El tipo de operación ('buy' o 'sell').
+ * @param {number} size - El tamaño de la posición a abrir o cerrar.
+ * @param {string} type - El tipo de operación ('buy' para compra, 'sell' para venta).
  * @param {string} strategy - La estrategia asociada a la posición.
- * @param {Server} io - Instancia del servidor Socket.IO.
- * @returns {Promise<string | undefined>} Un mensaje indicando el resultado de la operación.
+ * @param {Server} io - Instancia del servidor Socket.IO para emitir actualizaciones del dashboard.
+ * @returns {Promise<string | undefined>} Un mensaje indicando el resultado de la operación o undefined en caso de error.
  */
 export const positions = async (epic: string, size: number, type: string, strategy: string, io: Server) => {
   const sesiondata = await getSession();
@@ -108,7 +116,7 @@ export const positions = async (epic: string, size: number, type: string, strate
       const payloadCompra = {
         epic,
         direction: type.toUpperCase(),
-        size: size === 0.01 ? size.toString() : 0.001,
+        size: size.toString(),
         orderType: 'MARKET',
         currencyCode: 'USD',
       };
@@ -129,7 +137,7 @@ export const positions = async (epic: string, size: number, type: string, strate
 
         const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
-        await updateDbPositions(active.id, active.buyprice, 0, 0, strategy, true, 'capital', io);
+        await updateDbPositions(active.id, active.buyprice, size, 0, 0, strategy, true, 'capital', io);
         return "posicion abierta";
       } catch (error: any) {
         console.error('❌ Error:', error.response?.data || error.message);
@@ -155,7 +163,7 @@ export const positions = async (epic: string, size: number, type: string, strate
             });
 
             let singlePositionR = await singlePosition(response.data.dealReference);
-            await updateDbPositions(position.idRefBroker, 0, singlePositionR, 0, strategy, false, 'capital', io);
+            await updateDbPositions(position.idRefBroker, 0, 0, singlePositionR, 0, strategy, false, 'capital', io);
           } catch (error: any) {
             console.error(`❌ Error closing position ${position.idRefBroker}:`, idref);
             let mensaje = "error al realizar el cierre en capital, estrategia:" + strategy
@@ -168,21 +176,39 @@ export const positions = async (epic: string, size: number, type: string, strate
       }
       return "posiciones cerradas";
   }
+  return undefined; // Should not reach here if type is 'buy' or 'sell'
 }
 
 
 /**
  * @async
  * @function updateDbPositions
- * @description Crea o actualiza un registro de posición en la base de datos y emite una actualización del dashboard.
+ * @description Crea o actualiza un registro de posición en la base de datos de movimientos y emite una actualización del dashboard.
  * @param {string} id - El ID de referencia del broker para la posición.
+ * @param {number} buyPrice - El precio de compra de la posición.
+ * @param {number} sellPrice - El precio de venta de la posición.
+ * @param {number} ganancia - La ganancia obtenida de la posición.
  * @param {string} strategy - La estrategia asociada.
- * @param {boolean} open - El estado de la posición (abierta o cerrada).
+ * @param {boolean} open - El estado de la posición (true para abierta, false para cerrada).
  * @param {string} broker - El nombre del broker ('capital').
- * @param {Server} io - Instancia del servidor Socket.IO.
+ * @param {Server} io - Instancia del servidor Socket.IO para emitir actualizaciones del dashboard.
  * @returns {Promise<string>} Un mensaje indicando si la posición fue creada o cerrada en la BD.
  */
-async function updateDbPositions(id: string, buyPrice: number, sellPrice: number, ganancia: number, strategy: string, open: boolean, broker: string, io: Server) {
+/**
+ * @async
+ * @function updateDbPositions
+ * @description Crea o actualiza un registro de posición en la base de datos de movimientos y emite una actualización del dashboard.
+ * @param {string} id - El ID de referencia del broker para la posición.
+ * @param {number} buyPrice - El precio de compra de la posición.
+ * @param {number} sellPrice - El precio de venta de la posición.
+ * @param {number} ganancia - La ganancia obtenida de la posición.
+ * @param {string} strategy - La estrategia asociada.
+ * @param {boolean} open - El estado de la posición (true para abierta, false para cerrada).
+ * @param {string} broker - El nombre del broker ('capital').
+ * @param {Server} io - Instancia del servidor Socket.IO para emitir actualizaciones del dashboard.
+ * @returns {Promise<string>} Un mensaje indicando si la posición fue creada o cerrada en la BD.
+ */
+async function updateDbPositions(id: string, buyPrice: number, size: number, sellPrice: number, ganancia: number, strategy: string, open: boolean, broker: string, io: Server) {
   const m = await movementsModel.find({ idRefBroker: id });
   if (open) {
     if (m.length === 0) {
@@ -191,6 +217,7 @@ async function updateDbPositions(id: string, buyPrice: number, sellPrice: number
       const newMovement = new movementsModel({
         idRefBroker: id,
         strategy: strategy,
+        size: size,
         open: open,
         buyPrice: buyPrice,
         sellPrice: sellPrice,
@@ -216,16 +243,25 @@ async function updateDbPositions(id: string, buyPrice: number, sellPrice: number
     if (strategyS.includes(strategy) !== true) {
       size = 0.001
     }
-    let ganancia = (sellPrice - m[0].buyPrice) * size;
+    let ganancia = (sellPrice - m[0].buyPrice) * m[0].size;
     await movementsModel.updateOne({ idRefBroker: id }, { open: open, sellPrice: sellPrice, ganancia: ganancia });
 
     io.emit('dashboard_update', { type: 'sell', strategy: strategy });
     return "cerrado";
   }
+  return "No se realizó ninguna acción"; // Should not reach here if open is true and m.length > 0, or if open is false
 }
 
-
-export async function idrefVerification(id, strategy) {
+/**
+ * @async
+ * @function idrefVerification
+ * @description Intenta verificar y corregir el estado de una posición en caso de error al cerrar una operación en Capital.com.
+ *              Busca posiciones abiertas en Capital.com que no coincidan con el ID de referencia y las cierra, actualizando la base de datos.
+ * @param {string} id - El ID de referencia de la posición que falló al cerrar.
+ * @param {string} strategy - La estrategia asociada a la posición.
+ * @returns {Promise<string | undefined>} Un mensaje indicando si se corrigió el error o undefined en caso de fallo.
+ */
+export async function idrefVerification(id: string, strategy: string) {
 
   try {
     const sesiondata = await getSession();
@@ -268,4 +304,5 @@ export async function idrefVerification(id, strategy) {
 
     await errorSendEmail(asunto, mensaje)
   }
+  return undefined;
 }

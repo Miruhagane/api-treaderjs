@@ -17,6 +17,8 @@ import { dashboard } from "./config/db/dashboard";
 /**
  * @interface CryptoBalance
  * @description Define la estructura del balance de una criptomoneda, incluyendo lo disponible y lo que está en órdenes.
+ * @property {string} available - Cantidad de la criptomoneda disponible para operar.
+ * @property {string} onOrder - Cantidad de la criptomoneda que está actualmente en órdenes abiertas.
  */
 interface CryptoBalance {
     available: string;
@@ -34,7 +36,14 @@ interface Balances {
     BTC?: CryptoBalance;          // Opcional
 }
 
-// Inicializa el cliente de Binance con las claves de API desde las variables de entorno.
+/**
+ * Inicializa el cliente de Binance con las claves de API y secretos desde las variables de entorno.
+ * Configurado para usar el entorno de prueba (testnet).
+ */
+/**
+ * Inicializa el cliente de Binance con las claves de API y secretos desde las variables de entorno.
+ * Configurado para usar el entorno de prueba (testnet).
+ */
 const binance = new Binance({
     APIKEY: process.env.Binance_ApiKey,
     APISECRET: process.env.Binance_ApiSecret,
@@ -44,11 +53,12 @@ const binance = new Binance({
 /**
  * @async
  * @function position
- * @description Obtiene el precio actual de BTCUSDT y ejecuta una orden de compra o venta.
- * @param {string} type - El tipo de operación a realizar ('BUY' o 'SELL').
- * @param {string} strategy - La estrategia asociada a la posición.
- * @param {Server} io - Instancia del servidor Socket.IO.
- * @returns {Promise<string | number | undefined>} El resultado de la función setposition.
+ * @description Ejecuta una orden de mercado (compra o venta) para BTCUSDT en Binance y registra el movimiento.
+ *              En caso de compra, crea un nuevo registro de movimiento. En caso de venta, actualiza los movimientos abiertos existentes.
+ * @param {string} type - El tipo de operación a realizar ('BUY' para compra, 'SELL' para venta).
+ * @param {string} strategy - La estrategia de trading asociada a esta operación.
+ * @param {Server} io - Instancia del servidor Socket.IO para emitir actualizaciones del dashboard.
+ * @returns {Promise<string>} Un mensaje indicando el resultado de la operación (éxito o error).
  */
 export const position = async (type: string, strategy: string, io: Server) => {
 
