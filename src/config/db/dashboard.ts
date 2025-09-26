@@ -33,27 +33,32 @@ export async function dashboard(page: number = 1, limit: number = 5, strategy?: 
  * @param days - The number of days to look back.
  * @returns A promise that resolves to an array of objects, each containing the strategy and its total profit.
  */
-export async function totalGananciaPorEstrategia(days: number) {
+export async function totalGananciaPorEstrategia(filter: string) {
+
+    let days = 1;
+
+    filter === 'diario' ? days = 1 : null
+    filter === 'semanal' ? days = 7 : null
+    filter === 'mensual' ? days = 30 : null
+
+
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 1);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - days);
     sevenDaysAgo.setHours(0, 0, 0, 0);
 
-
-    const result = await movementsModel.aggregate([
-        // {
-
-        //     $match: {
-        //         myRegionalDate: { $gte: sevenDaysAgo }
-        //     }
-        // },
-        {
-            $group: {
-                _id: "$strategy",
-                totalGanancia: { $sum: "$ganancia" }
-            }
-        }
-    ]);
-    return result;
+    if (filter === 'todo') {
+        const result = await movementsModel.aggregate([
+            { $group: { _id: "$strategy", totalGanancia: { $sum: "$ganancia" } } }
+        ]);
+        return result;
+    }
+    else {
+        const result = await movementsModel.aggregate([
+            { $match: { myRegionalDate: { $gte: sevenDaysAgo } } },
+            { $group: { _id: "$strategy", totalGanancia: { $sum: "$ganancia" } } }
+        ]);
+        return result;
+    }
 }
 
 /**
@@ -61,29 +66,33 @@ export async function totalGananciaPorEstrategia(days: number) {
  * @param days - The number of days to look back.
  * @returns A promise that resolves to an array of objects, each containing the broker and its total profit.
  */
-export async function totalGananciaPorBroker(days: number) {
+export async function totalGananciaPorBroker(filter: string) {
+
+    let days = 1;
+
+    filter === 'diario' ? days = 1 : null
+    filter === 'semanal' ? days = 7 : null
+    filter === 'mensual' ? days = 30 : null
 
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - days);
     sevenDaysAgo.setHours(0, 0, 0, 0);
 
-    const result = await movementsModel.aggregate([
-        {
+    if (filter === 'todo') {
+        const result = await movementsModel.aggregate([
+            { $group: { _id: "$broker", totalGanancia: { $sum: "$ganancia" } } }
+        ])
 
-            $match: {
-                myRegionalDate: { $gte: sevenDaysAgo }
-            }
-        },
-        {
-            $group: {
-                _id: "$broker",
-                totalGanancia: { $sum: "$ganancia" }
-            }
-        }
-    ])
+        return result;
+    }
+    else {
+        const result = await movementsModel.aggregate([
+            { $match: { myRegionalDate: { $gte: sevenDaysAgo } } },
+            { $group: { _id: "$broker", totalGanancia: { $sum: "$ganancia" } } }
+        ])
 
-    return result;
-
+        return result;
+    }
 }
 
 /**

@@ -116,8 +116,8 @@ app.get('/datatable-dashboard', async (req, res) => {
  * @returns {Promise<object>} Un array de objetos, cada uno con la estrategia y su ganancia total.
  */
 app.get('/ganancia_estrategia', async (req, res) => {
-  const days = parseInt(req.query.days as string) || 7;
-  const result = await totalGananciaPorEstrategia(days);
+  const filter = req.query.filter as string || 'todo';
+  const result = await totalGananciaPorEstrategia(filter);
   res.json(result);
 });
 
@@ -142,8 +142,8 @@ app.get('/ganancia_linechart', async (req, res) => {
  * @returns {Promise<object>} Un array de objetos, cada uno con el broker y su ganancia total.
  */
 app.get('/ganancia_broker', async (req, res) => {
-  const days = parseInt(req.query.days as string) || 7;
-  const result = await totalGananciaPorBroker(days,);
+ const filter = req.query.filter as string || 'todo';
+  const result = await totalGananciaPorBroker(filter);
   res.json(result);
 });
 
