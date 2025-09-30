@@ -155,18 +155,14 @@ export const positions = async (epic: string, size: number, type: string, strate
       }
 
     case ('sell'):
-      const m = await movementsModel.find({ strategy: strategy, open: true, type, broker: 'capital' });
+      const m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' });
       let idref = ''
       if (m.length > 0) {
         let close = false;
         for (const position of m) {
-
-
           try {
 
             const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, position.idRefBroker);
-
-            active.status !== "OPEN" ? close = true : null
 
             idref = `error al realizar el delete en capital, id: ${active.idBroker}`;
             let response = await axios.delete(`${url_api}positions/${active.idBroker}`, {
@@ -226,6 +222,7 @@ export const positions = async (epic: string, size: number, type: string, strate
  * @returns {Promise<string>} Un mensaje indicando si la posición fue creada o cerrada en la BD.
  */
 async function updateDbPositions(id: string, buyPrice: number, size: number, sellPrice: number, ganancia: number, strategy: string, open: boolean, type: string, broker: string, io: Server) {
+  console.log(id)
   const m = await movementsModel.find({ idRefBroker: id });
   if (open) {
     if (m.length === 0) {

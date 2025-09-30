@@ -57,6 +57,7 @@ app.get('/capital_balance', (req, res) => {
  * @returns {Promise<object>} Un objeto con el resultado de la operación.
  */
 app.post('/capital_position', async (req, res) => {
+  console.log("entro")
   const payload = req.body;
   try {
     let result = await positions(payload.epic, payload.size, payload.type, payload.strategy, io);
