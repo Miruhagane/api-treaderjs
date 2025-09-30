@@ -52,9 +52,16 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: strin
 
   let activePositionslist = positionslist.data;
 
+  let idref = ""
+  if (activePositionslist.affectedDeals.length > 0) { idref = activePositionslist.affectedDeals[0].dealId }
+  else { idref = activePositionslist.dealId }
+
   let response = {
     buyprice: activePositionslist.level,
-    id: activePositionslist.affectedDeals[0].dealId
+    id: activePositionslist.dealReference,
+    idBroker: idref,
+    status: activePositionslist.status,
+    level: activePositionslist.level
   }
 
   return response
@@ -137,7 +144,7 @@ export const positions = async (epic: string, size: number, type: string, strate
 
         const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
-        await updateDbPositions(active.id, active.buyprice, size, 0, 0, strategy, true, 'capital', io);
+        await updateDbPositions(active.id, active.buyprice, size, 0, 0, strategy, true, type, 'capital', io);
         return "posicion abierta";
       } catch (error: any) {
         console.error('❌ Error:', error.response?.data || error.message);
@@ -148,13 +155,21 @@ export const positions = async (epic: string, size: number, type: string, strate
       }
 
     case ('sell'):
-      const m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' });
+      const m = await movementsModel.find({ strategy: strategy, open: true, type, broker: 'capital' });
       let idref = ''
       if (m.length > 0) {
+        let close = false;
         for (const position of m) {
+
+
           try {
-            idref = `error al realizar el delete en capital, id: ${position.idRefBroker}}`;
-            let response = await axios.delete(`${url_api}positions/${position.idRefBroker}`, {
+
+            const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, position.idRefBroker);
+
+            active.status !== "OPEN" ? close = true : null
+
+            idref = `error al realizar el delete en capital, id: ${active.idBroker}`;
+            let response = await axios.delete(`${url_api}positions/${active.idBroker}`, {
               headers: {
                 'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
                 'CST': sesiondata.CST,
@@ -162,13 +177,15 @@ export const positions = async (epic: string, size: number, type: string, strate
               }
             });
 
-            let singlePositionR = await singlePosition(response.data.dealReference);
-            await updateDbPositions(position.idRefBroker, 0, 0, singlePositionR, 0, strategy, false, 'capital', io);
+            const ver: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, response.data.dealReference);
+
+            await updateDbPositions(position.idRefBroker, 0, 0, ver.level, 0, strategy, false, type, 'capital', io);
           } catch (error: any) {
+            console.log(error.data)
             console.error(`❌ Error closing position ${position.idRefBroker}:`, idref);
             let mensaje = "error al realizar el cierre en capital, estrategia:" + strategy
-            await errorSendEmail(mensaje, error.response?.data || error.message)
-            await idrefVerification(position.idRefBroker, strategy)
+            // await errorSendEmail(mensaje, error.response?.data || error.message)
+            // await idrefVerification(position.idRefBroker, strategy)
 
             return "Error al cerrar la posición";
           }
@@ -208,7 +225,7 @@ export const positions = async (epic: string, size: number, type: string, strate
  * @param {Server} io - Instancia del servidor Socket.IO para emitir actualizaciones del dashboard.
  * @returns {Promise<string>} Un mensaje indicando si la posición fue creada o cerrada en la BD.
  */
-async function updateDbPositions(id: string, buyPrice: number, size: number, sellPrice: number, ganancia: number, strategy: string, open: boolean, broker: string, io: Server) {
+async function updateDbPositions(id: string, buyPrice: number, size: number, sellPrice: number, ganancia: number, strategy: string, open: boolean, type: string, broker: string, io: Server) {
   const m = await movementsModel.find({ idRefBroker: id });
   if (open) {
     if (m.length === 0) {
@@ -216,6 +233,7 @@ async function updateDbPositions(id: string, buyPrice: number, size: number, sel
       let date = new Date()
       const newMovement = new movementsModel({
         idRefBroker: id,
+        type: type.toUpperCase(),
         strategy: strategy,
         size: size,
         open: open,
@@ -244,8 +262,9 @@ async function updateDbPositions(id: string, buyPrice: number, size: number, sel
       size = 0.001
     }
     let ganancia = (sellPrice - m[0].buyPrice) * m[0].size;
-    await movementsModel.updateOne({ idRefBroker: id }, { open: open, sellPrice: sellPrice, ganancia: ganancia });
-
+    console.log(id)
+    let a = await movementsModel.updateOne({ idRefBroker: id }, { open: open, type: type.toUpperCase(), sellPrice: sellPrice, ganancia: ganancia });
+    console.log(a)
     io.emit('dashboard_update', { type: 'sell', strategy: strategy });
     return "cerrado";
   }
@@ -265,35 +284,37 @@ export async function idrefVerification(id: string, strategy: string) {
 
   try {
     const sesiondata = await getSession();
+    let epic = "US100";
     let strategyS = ["Enhanced MACD", "crybaby"]
 
-    if (strategyS.includes(strategy)) {
+    strategyS.includes(strategy) ? null : epic = "BTCUSD"
 
-      let posicionError = await movementsModel.find({ idRefBroker: id, strategy: strategy });
+    let posicionError = await movementsModel.find({ idRefBroker: id, strategy: strategy });
 
-      let positionslist = await axios.get(`${url_api}positions/`, {
-        headers: {
-          'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
-          'CST': sesiondata.CST,
-          'Content-Type': 'application/json',
-        }
-      })
+    let positionslist = await axios.get(`${url_api}positions/`, {
+      headers: {
+        'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
+        'CST': sesiondata.CST,
+        'Content-Type': 'application/json',
+      }
+    })
 
-      for (let position of positionslist.data.positions) {
-        if (position.position.dealId !== id && position.market.epic === "US100") {
-          let response = await axios.delete(`${url_api}positions/${position.position.dealId}`, {
-            headers: {
-              'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
-              'CST': sesiondata.CST,
-              'Content-Type': 'application/json',
-            }
-          });
-          let singlePositionR = await singlePosition(response.data.dealReference);
-          let ganancia = (singlePositionR - posicionError[0].buyPrice) * 0.01;
-          await movementsModel.updateOne({ _id: posicionError[0]._id }, { open: false, idRefBroker: position.position.dealId, sellPrice: singlePositionR, ganancia: ganancia })
-          console.info(`error corregido nuevo idref: ${position.position.dealId}`)
-          return `error corregido nuevo idref: ${position.position.dealId}`
-        }
+
+    for (let position of positionslist.data.positions) {
+
+      if (position.position.dealId !== id && position.market.epic === epic) {
+        let response = await axios.delete(`${url_api}positions/${position.position.dealId}`, {
+          headers: {
+            'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
+            'CST': sesiondata.CST,
+            'Content-Type': 'application/json',
+          }
+        });
+        let singlePositionR = await singlePosition(response.data.dealReference);
+        let ganancia = (singlePositionR - posicionError[0].buyPrice) * posicionError[0].size;
+        await movementsModel.updateOne({ _id: posicionError[0]._id }, { open: false, idRefBroker: position.position.dealId, sellPrice: singlePositionR, ganancia: ganancia })
+        console.info(`error corregido nuevo idref: ${position.position.dealId}`)
+        return `error corregido nuevo idref: ${position.position.dealId}`
       }
     }
   }
@@ -305,4 +326,92 @@ export async function idrefVerification(id: string, strategy: string) {
     await errorSendEmail(asunto, mensaje)
   }
   return undefined;
+}
+
+async function capitalPosition(epic: string, size: number, type: string, strategy: string, io: Server) {
+  const sesiondata = await getSession();
+
+  console.log(type)
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  const payloadCompra = {
+    epic,
+    direction: type.toUpperCase(),
+    size: size.toString(),
+    orderType: 'MARKET',
+    currencyCode: 'USD',
+  };
+
+
+  const options: AxiosRequestConfig = {
+    method: 'POST',
+    url: `${url_api}positions`,
+    headers: {
+      'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
+      'CST': sesiondata.CST,
+      'Content-Type': 'application/json',
+    },
+    data: payloadCompra
+  };
+
+  try {
+    let r = await axios(options);
+
+    const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
+
+    await updateDbPositions(active.id, active.buyprice, size, 0, 0, strategy, true, type, 'capital', io);
+    return "posicion abierta";
+  } catch (error: any) {
+    console.error('❌ Error:', error.response?.data || error.message);
+
+    let mensaje = "error al realizar la compra en capital, estrategia:" + strategy
+    await errorSendEmail(mensaje, error.response?.data || error.message)
+    return "Error al realizar la compra";
+  }
+}
+
+
+export async function capitalbuyandsell(epic: string, size: number, type: string, strategy: string, io: Server) {
+
+
+  let m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' })
+  console.log(m)
+
+  if (m.length === 0) {
+    return await capitalPosition(epic, size, type, strategy, io)
+  }
+
+  if (m[0]?.type === type.toUpperCase()) {
+    return await capitalPosition(epic, size, type, strategy, io)
+  }
+
+  if (m[0]?.type !== type.toUpperCase()) {
+    const sesiondata = await getSession();
+    for (const position of m) {
+      try {
+        const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, position.idRefBroker);
+        let response = await axios.delete(`${url_api}positions/${active.idBroker}`, {
+          headers: {
+            'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
+            'CST': sesiondata.CST,
+            'Content-Type': 'application/json',
+          }
+        });
+        const ver: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, response.data.dealReference);
+
+        await updateDbPositions(position.idRefBroker, 0, 0, ver.level, 0, strategy, false, type, 'capital', io);
+      } catch (error: any) {
+        console.log(error.data)
+        let mensaje = "error al realizar el cierre en capital, estrategia:" + strategy
+        // await errorSendEmail(mensaje, error.response?.data || error.message)
+        // await idrefVerification(position.idRefBroker, strategy)
+
+        return "Error al cerrar la posición";
+      }
+    }
+
+    return "posiciones cerradas";
+
+  }
+
+
 }

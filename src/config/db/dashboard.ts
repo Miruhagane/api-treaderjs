@@ -28,6 +28,19 @@ export async function dashboard(page: number = 1, limit: number = 5, strategy?: 
     };
 }
 
+export async function csv(strategy: string) {
+
+    let movements;
+    if (strategy === '' || strategy === undefined || strategy === null) {
+        movements = await movementsModel.find();
+    }
+    else {
+        movements = await movementsModel.find({ strategy: strategy });
+    }
+
+    return movements;
+}
+
 /**
  * Calculates the total profit per strategy for a given number of days.
  * @param days - The number of days to look back.

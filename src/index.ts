@@ -5,15 +5,16 @@
 
 import express from 'express';
 import bodyParser from 'body-parser';
+import { Parser } from 'json2csv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { dbconection } from './config/db';
 import cors from 'cors';
 
 // Importa las funciones de los módulos de broker
-import { positions, accountBalance, idrefVerification } from './capital';
+import { positions, accountBalance, capitalbuyandsell } from './capital';
 import { position } from './binance';
-import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia } from './config/db/dashboard';
+import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv } from './config/db/dashboard';
 
 const app = express();
 app.use(cors());
@@ -50,20 +51,6 @@ app.get('/capital_balance', (req, res) => {
 });
 
 /**
- * @route POST /prueba
- * @description Ruta de prueba para verificar la verificación de ID de referencia.
- * @param {object} req.body - El payload de la solicitud, que debe contener 'id' y 'strategy'.
- * @returns {Promise<string>} El resultado de la verificación del ID de referencia.
- */
-app.post('/prueba', async (req, res) => {
-  console.log(req.body);
-  const payload = req.body;
-
-  let r = await idrefVerification(payload.id, payload.strategy)
-  return res.send(r);
-})
-
-/**
  * @route POST /capital_position
  * @description Crea una nueva posición en Capital.com.
  * @param {object} req.body - El payload de la solicitud, que debe contener epic, size, type y strategy.
@@ -71,9 +58,19 @@ app.post('/prueba', async (req, res) => {
  */
 app.post('/capital_position', async (req, res) => {
   const payload = req.body;
-  console.log(payload);
   try {
     let result = await positions(payload.epic, payload.size, payload.type, payload.strategy, io);
+    res.send({ data: result });
+  } catch (e) {
+    console.log(e);
+    res.send('Error al realizar la posicion');
+  }
+});
+
+app.post('/capital_buyandsell', async (req, res) => {
+  const payload = req.body;
+  try {
+    let result = await capitalbuyandsell(payload.epic, payload.size, payload.type, payload.strategy, io);
     res.send({ data: result });
   } catch (e) {
     console.log(e);
@@ -109,6 +106,20 @@ app.get('/datatable-dashboard', async (req, res) => {
   res.json(result);
 });
 
+app.get('/csv', async (req, res) => {
+  const strategy = req.query.strategy as string || '';
+  const result = await csv(strategy);
+
+  const fields = ["strategy", "buyPrice", "sellPrice", "ganancia", "broker", "date"];
+  const parser = new Parser({ fields });
+  const document = parser.parse(result);
+
+  res.header("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", "attachment; filename=movimientos.csv");
+  return res.send(document);
+})
+
+
 /**
  * @route GET /ganancia_estrategia
  * @description Calcula la ganancia total por estrategia para un número de días dado.
@@ -142,7 +153,7 @@ app.get('/ganancia_linechart', async (req, res) => {
  * @returns {Promise<object>} Un array de objetos, cada uno con el broker y su ganancia total.
  */
 app.get('/ganancia_broker', async (req, res) => {
- const filter = req.query.filter as string || 'todo';
+  const filter = req.query.filter as string || 'todo';
   const result = await totalGananciaPorBroker(filter);
   res.json(result);
 });
