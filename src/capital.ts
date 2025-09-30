@@ -258,9 +258,7 @@ async function updateDbPositions(id: string, buyPrice: number, size: number, sel
       size = 0.001
     }
     let ganancia = (sellPrice - m[0].buyPrice) * m[0].size;
-    console.log(id)
-    let a = await movementsModel.updateOne({ idRefBroker: id }, { open: open, type: type.toUpperCase(), sellPrice: sellPrice, ganancia: ganancia });
-    console.log(a)
+     await movementsModel.updateOne({ idRefBroker: id }, { open: open, type: type.toUpperCase(), sellPrice: sellPrice, ganancia: ganancia });
     io.emit('dashboard_update', { type: 'sell', strategy: strategy });
     return "cerrado";
   }
@@ -326,8 +324,6 @@ export async function idrefVerification(id: string, strategy: string) {
 
 async function capitalPosition(epic: string, size: number, type: string, strategy: string, io: Server) {
   const sesiondata = await getSession();
-
-  console.log(type)
   await new Promise(resolve => setTimeout(resolve, 1000));
   const payloadCompra = {
     epic,
@@ -370,7 +366,6 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
 
 
   let m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' })
-  console.log(m)
 
   if (m.length === 0) {
     return await capitalPosition(epic, size, type, strategy, io)
@@ -404,9 +399,7 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
         return "Error al cerrar la posición";
       }
     }
-
     return "posiciones cerradas";
-
   }
 
 
