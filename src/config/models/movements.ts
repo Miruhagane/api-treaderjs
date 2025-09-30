@@ -22,6 +22,10 @@ export class movements {
      */
     @prop({ required: true })
     open: boolean
+    
+    @prop({ required: true })
+    type: string
+
 
     @prop({ required: true })
     size: number
