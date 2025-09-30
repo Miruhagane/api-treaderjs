@@ -155,18 +155,14 @@ export const positions = async (epic: string, size: number, type: string, strate
       }
 
     case ('sell'):
-      const m = await movementsModel.find({ strategy: strategy, open: true, type, broker: 'capital' });
+      const m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' });
       let idref = ''
       if (m.length > 0) {
         let close = false;
         for (const position of m) {
-
-
           try {
 
             const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, position.idRefBroker);
-
-            active.status !== "OPEN" ? close = true : null
 
             idref = `error al realizar el delete en capital, id: ${active.idBroker}`;
             let response = await axios.delete(`${url_api}positions/${active.idBroker}`, {
