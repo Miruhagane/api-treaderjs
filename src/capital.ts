@@ -392,9 +392,9 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
                 'Content-Type': 'application/json',
               }
             });
-        // const ver: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, response.data.dealReference);
+        const ver: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, response.data.dealReference);
 
-        // await updateDbPositions(position.idRefBroker, 0, 0, ver.level, 0, strategy, false, type, 'capital', io);
+        await updateDbPositions(position.idRefBroker, 0, 0, ver.level, 0, strategy, false, type, 'capital', io);
       } catch (error: any) {
         console.log("error capitalbuyandsell ==> ",error.errorCode)
         let mensaje = "error al realizar el cierre en capital, estrategia:" + strategy
