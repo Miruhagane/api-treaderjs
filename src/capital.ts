@@ -52,6 +52,7 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: strin
 
   let activePositionslist = positionslist.data;
 
+
   let idref = ""
   if (activePositionslist.affectedDeals.length > 0) { idref = activePositionslist.affectedDeals[0].dealId }
   else { idref = activePositionslist.dealId }
@@ -144,6 +145,7 @@ export const positions = async (epic: string, size: number, type: string, strate
 
         const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
+        console.log(active)
         await updateDbPositions(active.id, active.buyprice, size, 0, 0, strategy, true, type, 'capital', io);
         return "posicion abierta";
       } catch (error: any) {
@@ -163,6 +165,8 @@ export const positions = async (epic: string, size: number, type: string, strate
           try {
 
             const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, position.idRefBroker);
+
+            console.log(active)
 
             idref = `error al realizar el delete en capital, id: ${active.idBroker}`;
             let response = await axios.delete(`${url_api}positions/${active.idBroker}`, {
@@ -380,18 +384,19 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
     for (const position of m) {
       try {
         const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, position.idRefBroker);
-        let response = await axios.delete(`${url_api}positions/${active.idBroker}`, {
-          headers: {
-            'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
-            'CST': sesiondata.CST,
-            'Content-Type': 'application/json',
-          }
-        });
-        const ver: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, response.data.dealReference);
 
-        await updateDbPositions(position.idRefBroker, 0, 0, ver.level, 0, strategy, false, type, 'capital', io);
+        let response = await axios.delete(`${url_api}positions/${active.idBroker}`, {
+              headers: {
+                'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
+                'CST': sesiondata.CST,
+                'Content-Type': 'application/json',
+              }
+            });
+        // const ver: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, response.data.dealReference);
+
+        // await updateDbPositions(position.idRefBroker, 0, 0, ver.level, 0, strategy, false, type, 'capital', io);
       } catch (error: any) {
-        console.log(error.data)
+        console.log("error capitalbuyandsell ==> ",error.errorCode)
         let mensaje = "error al realizar el cierre en capital, estrategia:" + strategy
         // await errorSendEmail(mensaje, error.response?.data || error.message)
         // await idrefVerification(position.idRefBroker, strategy)
