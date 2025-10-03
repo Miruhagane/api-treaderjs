@@ -52,7 +52,7 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: strin
 
   let activePositionslist = positionslist.data;
 
-
+console.log(activePositionslist)
   let idref = ""
   if (activePositionslist.affectedDeals.length > 0) { idref = activePositionslist.affectedDeals[0].dealId }
   else { idref = activePositionslist.dealId }
@@ -145,7 +145,6 @@ export const positions = async (epic: string, size: number, type: string, strate
 
         const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
-        console.log(active)
         await updateDbPositions(active.id, active.buyprice, size, 0, 0, strategy, true, type, 'capital', io);
         return "posicion abierta";
       } catch (error: any) {
@@ -157,7 +156,7 @@ export const positions = async (epic: string, size: number, type: string, strate
       }
 
     case ('sell'):
-      const m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' });
+      const m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' }).sort({ myRegionalDate: -1 });
       let idref = ''
       if (m.length > 0) {
         let close = false;
@@ -165,9 +164,6 @@ export const positions = async (epic: string, size: number, type: string, strate
           try {
 
             const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, position.idRefBroker);
-
-            console.log(active)
-
             idref = `error al realizar el delete en capital, id: ${active.idBroker}`;
             let response = await axios.delete(`${url_api}positions/${active.idBroker}`, {
               headers: {
@@ -369,7 +365,8 @@ async function capitalPosition(epic: string, size: number, type: string, strateg
 export async function capitalbuyandsell(epic: string, size: number, type: string, strategy: string, io: Server) {
 
 
-  let m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' })
+  let m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' }).sort({ myRegionalDate: -1 });
+
 
   if (m.length === 0) {
     return await capitalPosition(epic, size, type, strategy, io)
@@ -385,6 +382,8 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
       try {
         const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, position.idRefBroker);
 
+        console.log(active)
+
         let response = await axios.delete(`${url_api}positions/${active.idBroker}`, {
               headers: {
                 'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
@@ -392,6 +391,8 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
                 'Content-Type': 'application/json',
               }
             });
+
+            
         const ver: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, response.data.dealReference);
 
         await updateDbPositions(position.idRefBroker, 0, 0, ver.level, 0, strategy, false, type, 'capital', io);
