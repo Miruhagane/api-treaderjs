@@ -60,9 +60,16 @@ app.post('/capital_position', async (req, res) => {
   const payload = req.body;
   console.log("payload capital_position ==>",payload)
   try {
-    
-    let result = await positions(payload.epic, payload.size, payload.type, payload.strategy, io);
+   
+    if(payload !== undefined)
+    { 
+      let result = await positions(payload.epic, payload.size, payload.type, payload.strategy, io);
     res.send({ data: result });
+    }
+    else{
+    return res.status(400).json({msn: 'se recibio un payload vacio ', payload})
+    }
+   
   } catch (e) {
     console.log(e);
     res.send('Error al realizar la posicion');
@@ -79,10 +86,7 @@ app.post('/capital_buyandsell', async (req, res) => {
     return res.send({ data: result });
     }
     else{
-      return res.json({
-        status: 400,
-        msn: "payload indenfinido"
-      }, {payload});
+     return res.status(400).json({msn: 'se recibio un payload vacio ', payload})
     }
   
   } catch (e) {
