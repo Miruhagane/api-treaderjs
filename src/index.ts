@@ -58,18 +58,17 @@ app.get('/capital_balance', (req, res) => {
  */
 app.post('/capital_position', async (req, res) => {
   const payload = req.body;
-  console.log("payload capital_position ==>",payload)
+  console.log("payload capital_position ==>", payload)
   try {
-   
-    if(payload !== undefined)
-    { 
+
+    if (payload !== undefined) {
       let result = await positions(payload.epic, payload.size, payload.type, payload.strategy, io);
-    res.send({ data: result });
+      res.send({ data: result });
     }
-    else{
-    return res.status(400).json({msn: 'se recibio un payload vacio ', payload})
+    else {
+      return res.status(400).json({ msn: 'se recibio un payload vacio ', payload })
     }
-   
+
   } catch (e) {
     console.log(e);
     res.send('Error al realizar la posicion');
@@ -78,17 +77,16 @@ app.post('/capital_position', async (req, res) => {
 
 app.post('/capital_buyandsell', async (req, res) => {
   const payload = req.body;
-  console.log("payload capital_buyandsell ==>",payload)
+  console.log("payload capital_buyandsell ==>", payload)
   try {
-    if(payload !== undefined)
-    {
-     let result = await capitalbuyandsell(payload.epic, payload.size, payload.type, payload.strategy, io);
-    return res.send({ data: result });
+    if (payload !== undefined) {
+      let result = await capitalbuyandsell(payload.epic, payload.size, payload.type, payload.strategy, io);
+      return res.send({ data: result });
     }
-    else{
-     return res.status(400).json({msn: 'se recibio un payload vacio ', payload})
+    else {
+      return res.status(400).json({ msn: 'se recibio un payload vacio ', payload })
     }
-  
+
   } catch (e) {
     console.log(e);
     res.send('Error al realizar la posicion');
