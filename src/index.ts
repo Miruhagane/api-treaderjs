@@ -60,6 +60,7 @@ app.post('/capital_position', async (req, res) => {
   const payload = req.body;
   console.log("payload capital_position ==>",payload)
   try {
+    
     let result = await positions(payload.epic, payload.size, payload.type, payload.strategy, io);
     res.send({ data: result });
   } catch (e) {
@@ -72,8 +73,18 @@ app.post('/capital_buyandsell', async (req, res) => {
   const payload = req.body;
   console.log("payload capital_buyandsell ==>",payload)
   try {
-    let result = await capitalbuyandsell(payload.epic, payload.size, payload.type, payload.strategy, io);
-    res.send({ data: result });
+    if(payload !== undefined)
+    {
+     let result = await capitalbuyandsell(payload.epic, payload.size, payload.type, payload.strategy, io);
+    return res.send({ data: result });
+    }
+    else{
+      return res.json({
+        status: 400,
+        msn: "payload indenfinido"
+      }, {payload});
+    }
+  
   } catch (e) {
     console.log(e);
     res.send('Error al realizar la posicion');
