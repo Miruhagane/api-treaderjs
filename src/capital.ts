@@ -51,8 +51,6 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: strin
   });
 
   let activePositionslist = positionslist.data;
-
-console.log(activePositionslist)
   let idref = ""
   if (activePositionslist.affectedDeals.length > 0) { idref = activePositionslist.affectedDeals[0].dealId }
   else { idref = activePositionslist.dealId }
