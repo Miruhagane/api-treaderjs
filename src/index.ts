@@ -61,7 +61,7 @@ app.post('/capital_position', async (req, res) => {
   console.log("payload capital_position ==>", payload)
   try {
 
-    if (payload !== undefined) {
+    if (payload && Object.keys(payload).length > 0) {
       let result = await positions(payload.epic, payload.size, payload.type, payload.strategy, io);
       res.send({ data: result });
     }
@@ -79,7 +79,7 @@ app.post('/capital_buyandsell', async (req, res) => {
   const payload = req.body;
   console.log("payload capital_buyandsell ==>", payload)
   try {
-    if (payload !== undefined) {
+    if (payload && Object.keys(payload).length > 0) {
       let result = await capitalbuyandsell(payload.epic, payload.size, payload.type, payload.strategy, io);
       return res.send({ data: result });
     }
