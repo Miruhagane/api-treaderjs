@@ -66,6 +66,31 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: strin
   return response
 }
 
+async function beforeDeletePosition(id: string, date: string) {
+  const sesiondata = await getSession();
+
+  let f = new Date(date);
+  const year = f.getFullYear();
+  const month = (f.getMonth() + 1).toString().padStart(2, '0');
+  const day = f.getDate().toString().padStart(2, '0');
+
+  let r = await axios.get(`${url_api}history/activity?from=${year}-${month}-${day}T00:00:00&to=${year}-${month}-${day}T23:59:59&detailed=true&dealId=${id}`, {
+    headers: {
+      'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
+      'CST': sesiondata.CST,
+      'Content-Type': 'application/json',
+    }
+  })
+
+  let activity = r.data.activities[0].details
+
+  return {
+    sellprice: activity.level,
+    ganancia: (activity.level - activity.openPrice) * activity.size
+  }
+
+}
+
 /**
  * @async
  * @function accountBalance
@@ -141,7 +166,7 @@ async function updateDbPositions(id: string, buyPrice: number, size: number, sel
       sellPrice: sellPrice,
       ganancia: ganancia,
       broker: broker,
-      date: date,
+      date: date.toISOString(),
       myRegionalDate: date.setHours(date.getHours() - 5)
     });
 
@@ -154,7 +179,7 @@ async function updateDbPositions(id: string, buyPrice: number, size: number, sel
 
   } else {
     const m = await movementsModel.find({ _id: id });
-    await movementsModel.updateOne({ _id: id }, { open: open, type: type.toUpperCase(), sellPrice: sellPrice, ganancia: ganancia });
+    await movementsModel.updateOne({ _id: id }, { open: open, type: type.toUpperCase(), sellPrice: sellPrice, ganancia: ganancia.toFixed(2) });
     io.emit('dashboard_update', { type: 'sell', strategy: strategy });
     return "cerrado";
   } // Should not reach here if open is true and m.length > 0, or if open is false
@@ -200,8 +225,6 @@ export const positions = async (epic: string, size: number, type: string, strate
 
         const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
-        console.log(active)
-
         await updateDbPositions(active.idBroker, active.buyprice, size, 0, 0, strategy, true, type, 'capital', io);
         return "posicion abierta";
       } catch (error: any) {
@@ -219,7 +242,6 @@ export const positions = async (epic: string, size: number, type: string, strate
         for (const position of m) {
           try {
 
-            const posicion = await singlePosition(position.idRefBroker);
             idref = `error al realizar el delete en capital, id: ${position.idRefBroker}`;
             let response = await axios.delete(`${url_api}positions/${position.idRefBroker}`, {
               headers: {
@@ -228,7 +250,9 @@ export const positions = async (epic: string, size: number, type: string, strate
                 'Content-Type': 'application/json',
               }
             });
-            await updateDbPositions(position._id.toString(), 0, 0, posicion.sellprice, posicion.ganancia, strategy, false, type, 'capital', io);
+
+            const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
+            await updateDbPositions(position._id.toString(), 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital', io);
           } catch (error: any) {
             console.log(error.data)
             console.error(`❌ Error closing position ${position.idRefBroker}:`, idref);
