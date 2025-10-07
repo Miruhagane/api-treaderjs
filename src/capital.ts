@@ -330,7 +330,7 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
     const sesiondata = await getSession();
     for (const position of m) {
       try {
-        const posicion = await singlePosition(position.idRefBroker);
+       
         let response = await axios.delete(`${url_api}positions/${position.idRefBroker}`, {
           headers: {
             'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
@@ -338,8 +338,8 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
             'Content-Type': 'application/json',
           }
         });
-
-        await updateDbPositions(position._id.toString(), 0, 0, posicion.sellprice, posicion.ganancia, strategy, false, type, 'capital', io);
+         const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
+        await updateDbPositions(position._id.toString(), 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital', io);
       } catch (error: any) {
         console.log("error capitalbuyandsell ==> ", error.data)
         let mensaje = "error al realizar el cierre en capital, estrategia:" + strategy
