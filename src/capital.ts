@@ -7,7 +7,7 @@ import movementsModel from "./config/models/movements";
 import { errorSendEmail } from "./config/mail";
 import { getSession } from "./config/sessionManager";
 import { Server } from "socket.io";
-import { dashboard } from "./config/db/dashboard";
+import cron from 'node-cron';
 
 const url_api = 'https://demo-api-capital.backend-capital.com/api/v1/';
 
@@ -82,11 +82,19 @@ async function beforeDeletePosition(id: string, date: string) {
     }
   })
 
+  console.log(r.data.activities)
+
   let activity = r.data.activities[0].details
+
+  let g = 0;
+
+  if (activity.level !== 0) {
+    g = (activity.level - activity.openPrice) * activity.size
+  }
 
   return {
     sellprice: activity.level,
-    ganancia: (activity.level - activity.openPrice) * activity.size
+    ganancia: g
   }
 
 }
@@ -152,7 +160,7 @@ export const singlePosition = async (id: string) => {
  * @param {Server} io - Instancia del servidor Socket.IO para emitir actualizaciones del dashboard.
  * @returns {Promise<string>} Un mensaje indicando si la posición fue creada o cerrada en la BD.
  */
-async function updateDbPositions(id: string, buyPrice: number, size: number, sellPrice: number, ganancia: number, strategy: string, open: boolean, type: string, broker: string, io: Server) {
+async function updateDbPositions(id: string, buyPrice: number, size: number, sellPrice: number, ganancia: number, strategy: string, open: boolean, type: string, broker: string) {
 
   if (open) {
     let date = new Date()
@@ -172,15 +180,11 @@ async function updateDbPositions(id: string, buyPrice: number, size: number, sel
 
     await newMovement.save();
 
-
-    io.emit('dashboard_update', { type: 'buy', strategy: strategy });
-
     return "creado y guardado";
 
   } else {
     const m = await movementsModel.find({ _id: id });
     await movementsModel.updateOne({ _id: id }, { open: open, type: type.toUpperCase(), sellPrice: sellPrice, ganancia: ganancia.toFixed(2) });
-    io.emit('dashboard_update', { type: 'sell', strategy: strategy });
     return "cerrado";
   } // Should not reach here if open is true and m.length > 0, or if open is false
 }
@@ -225,7 +229,7 @@ export const positions = async (epic: string, size: number, type: string, strate
 
         const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
-        await updateDbPositions(active.idBroker, active.buyprice, size, 0, 0, strategy, true, type, 'capital', io);
+        await updateDbPositions(active.idBroker, active.buyprice, size, 0, 0, strategy, true, type, 'capital');
         return "posicion abierta";
       } catch (error: any) {
         console.error('❌ Error:', error.data);
@@ -252,7 +256,7 @@ export const positions = async (epic: string, size: number, type: string, strate
             });
 
             const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
-            await updateDbPositions(position._id.toString(), 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital', io);
+            await updateDbPositions(position._id.toString(), 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital');
           } catch (error: any) {
             console.log(error.data)
             console.error(`❌ Error closing position ${position.idRefBroker}:`, idref);
@@ -271,7 +275,7 @@ export const positions = async (epic: string, size: number, type: string, strate
 
 
 
-async function capitalPosition(epic: string, size: number, type: string, strategy: string, io: Server) {
+async function capitalPosition(epic: string, size: number, type: string, strategy: string) {
   const sesiondata = await getSession();
   await new Promise(resolve => setTimeout(resolve, 1000));
   const payloadCompra = {
@@ -299,7 +303,7 @@ async function capitalPosition(epic: string, size: number, type: string, strateg
 
     const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
-    await updateDbPositions(active.idBroker, active.buyprice, size, 0, 0, strategy, true, type, 'capital', io);
+    await updateDbPositions(active.idBroker, active.buyprice, size, 0, 0, strategy, true, type, 'capital');
     return "posicion abierta";
   } catch (error: any) {
     console.error('❌ Error:', error.data);
@@ -319,18 +323,18 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
 
 
   if (m.length === 0) {
-    return await capitalPosition(epic, size, type, strategy, io)
+    return await capitalPosition(epic, size, type, strategy)
   }
 
   if (m[0]?.type === type.toUpperCase()) {
-    return await capitalPosition(epic, size, type, strategy, io)
+    return await capitalPosition(epic, size, type, strategy)
   }
 
   if (m[0]?.type !== type.toUpperCase()) {
     const sesiondata = await getSession();
     for (const position of m) {
       try {
-       
+
         let response = await axios.delete(`${url_api}positions/${position.idRefBroker}`, {
           headers: {
             'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
@@ -338,8 +342,8 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
             'Content-Type': 'application/json',
           }
         });
-         const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
-        await updateDbPositions(position._id.toString(), 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital', io);
+        const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
+        await updateDbPositions(position._id.toString(), 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital');
       } catch (error: any) {
         console.log("error capitalbuyandsell ==> ", error.data)
         let mensaje = "error al realizar el cierre en capital, estrategia:" + strategy
@@ -351,6 +355,36 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
     }
     return "posiciones cerradas";
   }
+}
 
+export async function verifyAndClosePositions() {
+  const sesiondata = await getSession();
+
+  let m = await movementsModel.find({ open: true, broker: 'capital' }).sort({ myRegionalDate: -1 });
+  let r = await axios.get(`${url_api}positions`, {
+    headers: {
+      'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
+      'CST': sesiondata.CST,
+      'Content-Type': 'application/json',
+    }
+  });
+
+  let openPositions = r.data.positions;
+
+  for (const position of m) {
+    let exists = openPositions.find((p: any) => p.position.dealId === position.idRefBroker);
+    if (!exists) {
+      const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
+      await updateDbPositions(position._id.toString(), 0, 0, finalPosition.sellprice, finalPosition.ganancia, position.strategy, false, position.type, 'capital');
+      console.log(`Cerrada posición ${position.idRefBroker} en la base de datos porque no existe en Capital.com`);
+    }
+  }
+
+  return "todas las posiciones verificadas";
 
 }
+
+
+cron.schedule('*/30 * * * *', async () => {
+  return await verifyAndClosePositions();
+})

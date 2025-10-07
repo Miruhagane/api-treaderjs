@@ -150,6 +150,8 @@ app.post('/capital_position', async (req, res) => {
  *       500:
  *         description: Error al realizar la operación.
  */
+
+
 app.post('/capital_buyandsell', async (req, res) => {
   const payload = req.body;
   console.log("payload capital_buyandsell ==>", payload)
