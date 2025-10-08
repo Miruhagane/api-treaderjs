@@ -6,7 +6,7 @@
 
 import axios from "axios";
 import dotenv from 'dotenv';
-import cron from 'node-cron';
+
 import TokenModel from "./models/tokens";
 dotenv.config();
 

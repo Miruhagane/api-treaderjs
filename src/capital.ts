@@ -81,9 +81,6 @@ async function beforeDeletePosition(id: string, date: string) {
       'Content-Type': 'application/json',
     }
   })
-
-  console.log(r.data.activities)
-
   let activity = r.data.activities[0].details
 
   let g = 0;
@@ -230,6 +227,7 @@ export const positions = async (epic: string, size: number, type: string, strate
         const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
         await updateDbPositions(active.idBroker, active.buyprice, size, 0, 0, strategy, true, type, 'capital');
+        io.emit('update', { message: 'Nueva posición abierta de ' + strategy + ' en Capital.com' });
         return "posicion abierta";
       } catch (error: any) {
         console.error('❌ Error:', error.data);
@@ -257,6 +255,7 @@ export const positions = async (epic: string, size: number, type: string, strate
 
             const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
             await updateDbPositions(position._id.toString(), 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital');
+            io.emit('update', { message: 'posición cerrada de ' + strategy + ' en Capital.com' });
           } catch (error: any) {
             console.log(error.data)
             console.error(`❌ Error closing position ${position.idRefBroker}:`, idref);
@@ -275,7 +274,7 @@ export const positions = async (epic: string, size: number, type: string, strate
 
 
 
-async function capitalPosition(epic: string, size: number, type: string, strategy: string) {
+async function capitalPosition(epic: string, size: number, type: string, strategy: string, io: Server) {
   const sesiondata = await getSession();
   await new Promise(resolve => setTimeout(resolve, 1000));
   const payloadCompra = {
@@ -304,6 +303,7 @@ async function capitalPosition(epic: string, size: number, type: string, strateg
     const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
     await updateDbPositions(active.idBroker, active.buyprice, size, 0, 0, strategy, true, type, 'capital');
+    io.emit('update', { message: 'Nueva posición abierta de ' + strategy + ' en Capital.com' });
     return "posicion abierta";
   } catch (error: any) {
     console.error('❌ Error:', error.data);
@@ -323,11 +323,11 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
 
 
   if (m.length === 0) {
-    return await capitalPosition(epic, size, type, strategy)
+    return await capitalPosition(epic, size, type, strategy, io)
   }
 
   if (m[0]?.type === type.toUpperCase()) {
-    return await capitalPosition(epic, size, type, strategy)
+    return await capitalPosition(epic, size, type, strategy, io)
   }
 
   if (m[0]?.type !== type.toUpperCase()) {
@@ -344,12 +344,12 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
         });
         const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
         await updateDbPositions(position._id.toString(), 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital');
+        io.emit('update', { message: 'posición cerrada de ' + strategy + ' en Capital.com' });
       } catch (error: any) {
         console.log("error capitalbuyandsell ==> ", error.data)
         let mensaje = "error al realizar el cierre en capital, estrategia:" + strategy
         // await errorSendEmail(mensaje, error.response?.data || error.message)
         // await idrefVerification(position.idRefBroker, strategy)
-
         return "Error al cerrar la posición";
       }
     }
@@ -385,6 +385,6 @@ export async function verifyAndClosePositions() {
 }
 
 
-cron.schedule('*/30 * * * *', async () => {
+cron.schedule('*/5 * * * *', async () => {
   return await verifyAndClosePositions();
 })
