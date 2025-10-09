@@ -90,9 +90,6 @@ async function beforeDeletePosition(id: string, date: string) {
     }
   })
 
-
-  console.log(r.data.activities)
-
   let activity = r.data.activities[0].details
 
   let g = 0;
