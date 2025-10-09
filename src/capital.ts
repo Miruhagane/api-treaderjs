@@ -42,6 +42,7 @@ async function getAccountBalance(token: string, cst: string) {
  */
 async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: string) {
 
+
   const positionslist = await axios.get(`${url_api}confirms/${id}`, {
     headers: {
       'X-SECURITY-TOKEN': XSECURITYTOKEN,
@@ -50,21 +51,28 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: strin
     }
   });
 
+  let crypto = ['BTCUSD', 'ETHUSD', 'LTCUSD', 'XRPUSD', 'BCHUSD', 'EOSUSD', 'XLMUSD', 'ADAUSD', 'TRXUSD', 'DOGEUSD']
+  let coin = [ 'US100', 'US30', 'DE30', 'UK100', 'FR40', 'JP225', 'HK50', 'CN50']
+
   let activePositionslist = positionslist.data;
   let idref = ""
   if (activePositionslist.affectedDeals.length > 0) { idref = activePositionslist.affectedDeals[0].dealId }
   else { idref = activePositionslist.dealId }
+
+  let margin = 0
+  if(crypto.includes(activePositionslist.epic)){ margin = 20 }
+  if(coin.includes(activePositionslist.epic)){ margin = 100 }
 
   let response = {
     buyprice: activePositionslist.level,
     id: activePositionslist.dealReference,
     idBroker: idref,
     status: activePositionslist.status,
-    level: activePositionslist.level
+    level: activePositionslist.level,
+    margen: (activePositionslist.level * activePositionslist.size) / margin
   }
-
   return response
-}
+} 
 
 async function beforeDeletePosition(id: string, date: string) {
   const sesiondata = await getSession();
@@ -81,13 +89,18 @@ async function beforeDeletePosition(id: string, date: string) {
       'Content-Type': 'application/json',
     }
   })
+
+
+  console.log(r.data.activities)
+
   let activity = r.data.activities[0].details
 
   let g = 0;
 
-  if (activity.level !== 0) {
+  if (activity.level !== 0 && activity.openPrice) {
     g = (activity.level - activity.openPrice) * activity.size
   }
+
 
   return {
     sellprice: activity.level,
@@ -157,7 +170,7 @@ export const singlePosition = async (id: string) => {
  * @param {Server} io - Instancia del servidor Socket.IO para emitir actualizaciones del dashboard.
  * @returns {Promise<string>} Un mensaje indicando si la posición fue creada o cerrada en la BD.
  */
-async function updateDbPositions(id: string, buyPrice: number, size: number, sellPrice: number, ganancia: number, strategy: string, open: boolean, type: string, broker: string) {
+async function updateDbPositions(id: string, buyPrice: number, size: number, margen: number, sellPrice: number, ganancia: number, strategy: string, open: boolean, type: string, broker: string) {
 
   if (open) {
     let date = new Date()
@@ -169,6 +182,7 @@ async function updateDbPositions(id: string, buyPrice: number, size: number, sel
       open: open,
       buyPrice: buyPrice,
       sellPrice: sellPrice,
+      margen: margen,
       ganancia: ganancia,
       broker: broker,
       date: date.toISOString(),
@@ -226,7 +240,7 @@ export const positions = async (epic: string, size: number, type: string, strate
 
         const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
-        await updateDbPositions(active.idBroker, active.buyprice, size, 0, 0, strategy, true, type, 'capital');
+        await updateDbPositions(active.idBroker, active.buyprice, size, active.margen, 0, 0, strategy, true, type, 'capital');
         io.emit('update', { message: 'Nueva posición abierta de ' + strategy + ' en Capital.com' });
         return "posicion abierta";
       } catch (error: any) {
@@ -254,7 +268,7 @@ export const positions = async (epic: string, size: number, type: string, strate
             });
 
             const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
-            await updateDbPositions(position._id.toString(), 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital');
+            await updateDbPositions(position._id.toString(), 0, 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital');
             io.emit('update', { message: 'posición cerrada de ' + strategy + ' en Capital.com' });
           } catch (error: any) {
             console.log(error.data)
@@ -302,7 +316,7 @@ async function capitalPosition(epic: string, size: number, type: string, strateg
 
     const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
-    await updateDbPositions(active.idBroker, active.buyprice, size, 0, 0, strategy, true, type, 'capital');
+    await updateDbPositions(active.idBroker, active.buyprice, active.margen, size, 0,  0, strategy, true, type, 'capital');
     io.emit('update', { message: 'Nueva posición abierta de ' + strategy + ' en Capital.com' });
     return "posicion abierta";
   } catch (error: any) {
@@ -343,7 +357,7 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
           }
         });
         const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
-        await updateDbPositions(position._id.toString(), 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital');
+        await updateDbPositions(position._id.toString(), 0, 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital');
         io.emit('update', { message: 'posición cerrada de ' + strategy + ' en Capital.com' });
       } catch (error: any) {
         console.log("error capitalbuyandsell ==> ", error.data)
@@ -375,7 +389,7 @@ export async function verifyAndClosePositions() {
     let exists = openPositions.find((p: any) => p.position.dealId === position.idRefBroker);
     if (!exists) {
       const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
-      await updateDbPositions(position._id.toString(), 0, 0, finalPosition.sellprice, finalPosition.ganancia, position.strategy, false, position.type, 'capital');
+      await updateDbPositions(position._id.toString(), 0, 0, 0, finalPosition.sellprice, finalPosition.ganancia, position.strategy, false, position.type, 'capital');
       console.log(`Cerrada posición ${position.idRefBroker} en la base de datos porque no existe en Capital.com`);
     }
   }

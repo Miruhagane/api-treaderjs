@@ -22,7 +22,7 @@ export class movements {
      */
     @prop({ required: true })
     open: boolean
-    
+
     @prop({ required: true })
     type: string
 
@@ -30,22 +30,28 @@ export class movements {
     @prop({ required: true })
     size: number
 
-     /**
-      * The buying price of the movement.
-      */
-     @prop({ required: true })
+    /**
+     * The buying price of the movement.
+     */
+    @prop({ required: true })
     buyPrice: number
 
-     /**
-      * The selling price of the movement.
-      */
-     @prop({ required: true })
+    /**
+     * The selling price of the movement.
+     */
+    @prop({ required: true })
     sellPrice: number
 
-     /**
-      * The profit or loss from the movement.
-      */
-     @prop({ required: true })
+    /**
+    * The margin of the movement.
+    */
+    @prop({ required: true })
+    margen: number
+
+    /**
+     * The profit or loss from the movement.
+     */
+    @prop({ required: true })
     ganancia: number
 
     /**
