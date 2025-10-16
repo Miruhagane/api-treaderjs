@@ -341,7 +341,7 @@ async function capitalPosition(epic: string, size: number, type: string, strateg
 
     const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
-    await updateDbPositions(active.idBroker, active.buyprice, active.margen, size, 0, 0, strategy, true, type, 'capital');
+    await updateDbPositions(active.idBroker, active.buyprice, size, active.margen, 0, 0, strategy, true, type, 'capital');
     io.emit('update', { message: 'Nueva posición abierta de ' + strategy + ' en Capital.com' });
     return "posicion abierta";
   } catch (error: any) {
