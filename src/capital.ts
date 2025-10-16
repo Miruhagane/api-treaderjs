@@ -424,6 +424,6 @@ export async function verifyAndClosePositions() {
 }
 
 
-// cron.schedule('*/5 * * * *', async () => {
-//   return await verifyAndClosePositions();
-// })
+cron.schedule('*/5 * * * *', async () => {
+  return await verifyAndClosePositions();
+})
