@@ -114,31 +114,75 @@ export async function totalGananciaPorBroker(filter: string) {
  * @param periodo - The period to group by, either 'mensual' or 'diario'.
  * @returns A promise that resolves to an array of formatted data entries.
  */
-export async function gananciaAgrupadaPorEstrategia(days: number, periodo: 'mensual' | 'diario' = 'mensual') {
+export async function gananciaAgrupadaPorEstrategia(filter: 'diario' | 'semanal' | 'mensual' | 'todo' = 'mensual') {
 
-    let dias = 1
-    dias = periodo === "mensual" ? 30 : days;
+    let days = 0;
+    let periodo: 'mensual' | 'diario' | 'semanal' = 'diario';
+
+    switch (filter) {
+        case 'diario':
+            days = 1;
+            periodo = 'diario';
+            break;
+        case 'semanal':
+            days = 28; // 4 semanas
+            periodo = 'semanal';
+            break;
+        case 'mensual':
+            days = 0; 
+            periodo = 'mensual';
+            break;
+        case 'todo':
+            periodo = 'mensual';
+            break;
+    }
 
     const dateLimit = new Date();
-    dateLimit.setDate(dateLimit.getDate() - dias);
-    dateLimit.setHours(0, 0, 0, 0);
+    if (days > 0) {
+        dateLimit.setDate(dateLimit.getDate() - days);
+        dateLimit.setHours(0, 0, 0, 0);
+    }
 
     let groupById: any;
     let sortById: any;
+    let secondGroupId: any;
+
     if (periodo === 'mensual') {
         groupById = {
             year: { $year: "$myRegionalDate" },
             month: { $month: "$myRegionalDate" }
         };
+        secondGroupId = {
+            year: "$_id.year",
+            month: "$_id.month"
+        };
         sortById = {
             "_id.year": 1,
             "_id.month": 1
+        };
+    } else if (periodo === 'semanal') {
+        groupById = {
+            year: { $isoWeekYear: "$myRegionalDate" },
+            week: { $isoWeek: "$myRegionalDate" }
+        };
+        secondGroupId = {
+            year: "$_id.year",
+            week: "$_id.week"
+        };
+        sortById = {
+            "_id.year": 1,
+            "_id.week": 1
         };
     } else { // diario
         groupById = {
             year: { $year: "$myRegionalDate" },
             month: { $month: "$myRegionalDate" },
             day: { $dayOfMonth: "$myRegionalDate" }
+        };
+        secondGroupId = {
+            year: "$_id.year",
+            month: "$_id.month",
+            day: "$_id.day"
         };
         sortById = {
             "_id.year": 1,
@@ -147,12 +191,17 @@ export async function gananciaAgrupadaPorEstrategia(days: number, periodo: 'mens
         };
     }
 
-    const aggregationResult = await movementsModel.aggregate([
-        {
+    const aggregationPipeline: any[] = [];
+
+    if (days > 0) {
+        aggregationPipeline.push({
             $match: {
                 myRegionalDate: { $gte: dateLimit }
             }
-        },
+        });
+    }
+
+    aggregationPipeline.push(
         {
             $group: {
                 _id: {
@@ -164,11 +213,7 @@ export async function gananciaAgrupadaPorEstrategia(days: number, periodo: 'mens
         },
         {
             $group: {
-                _id: {
-                    year: "$_id.year",
-                    month: "$_id.month",
-                    ...(periodo === 'diario' && { day: "$_id.day" })
-                },
+                _id: secondGroupId,
                 strategies: {
                     $push: {
                         strategy: "$_id.strategy",
@@ -180,23 +225,22 @@ export async function gananciaAgrupadaPorEstrategia(days: number, periodo: 'mens
         {
             $sort: sortById
         }
-    ]);
+    );
 
-    console.log(aggregationResult)
+    const aggregationResult = await movementsModel.aggregate(aggregationPipeline);
 
     // Format the data to match the desired JSON structure
     const formattedResult = aggregationResult.map(item => {
 
-        const year = item._id.year;
-        const month = item._id.month - 1;
-        const day = periodo === 'diario' ? item._id.day : 1;
-        const date = new Date(year, month, day);
-
-
         let formattedDate: string;
+
         if (periodo === 'mensual') {
+            const date = new Date(item._id.year, item._id.month - 1, 1);
             formattedDate = date.toLocaleString('en-US', { month: 'short' }) + ' ' + date.getFullYear().toString().slice(-2);
-        } else {
+        } else if (periodo === 'semanal') {
+            formattedDate = `Semana ${item._id.week} '${item._id.year.toString().slice(-2)}`;
+        } else { // diario
+            const date = new Date(item._id.year, item._id.month - 1, item._id.day);
             formattedDate = date.toLocaleString('en-US', { month: 'short', day: '2-digit' }) + ' ' + date.getFullYear().toString().slice(-2);
         }
 
@@ -204,8 +248,6 @@ export async function gananciaAgrupadaPorEstrategia(days: number, periodo: 'mens
             date: formattedDate,
             estrategias: []
         };
-
-
 
         item.strategies.forEach((s: any) => {
             let estrategiaFormateada = {

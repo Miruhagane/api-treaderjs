@@ -8,6 +8,7 @@ import { errorSendEmail } from "./config/mail";
 import { getSession } from "./config/sessionManager";
 import { Server } from "socket.io";
 import cron from 'node-cron';
+import { pre } from "@typegoose/typegoose";
 
 const url_api = 'https://demo-api-capital.backend-capital.com/api/v1/';
 
@@ -31,6 +32,33 @@ async function getAccountBalance(token: string, cst: string) {
   return response.data;
 }
 
+export async function getprices(epic: string, size: number,) {
+  const sesiondata = await getSession();
+
+  const response = await axios.get(`${url_api}prices/${epic}`, {
+    headers: {
+      'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
+      'CST': sesiondata.CST,
+      'Content-Type': 'application/json',
+    }
+  });
+
+  let crypto = ['BTCUSD', 'ETHUSD', 'LTCUSD', 'XRPUSD', 'BCHUSD', 'EOSUSD', 'XLMUSD', 'ADAUSD', 'TRXUSD', 'DOGEUSD']
+  let coin = ['US100', 'US30', 'DE30', 'UK100', 'FR40', 'JP225', 'HK50', 'CN50']
+
+  let margin = 1
+  if (crypto.includes(epic)) { margin = 20 }
+  if (coin.includes(epic)) { margin = 100 }
+
+  let r = {
+    precio: response.data.prices[0].openPrice.bid,
+    size: size,
+    margen: parseFloat(((response.data.prices[0].openPrice.bid * size) / margin).toFixed(2))
+  }
+
+  return r
+}
+
 /**
  * @async
  * @function allActivePositions
@@ -52,16 +80,16 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: strin
   });
 
   let crypto = ['BTCUSD', 'ETHUSD', 'LTCUSD', 'XRPUSD', 'BCHUSD', 'EOSUSD', 'XLMUSD', 'ADAUSD', 'TRXUSD', 'DOGEUSD']
-  let coin = [ 'US100', 'US30', 'DE30', 'UK100', 'FR40', 'JP225', 'HK50', 'CN50']
+  let coin = ['US100', 'US30', 'DE30', 'UK100', 'FR40', 'JP225', 'HK50', 'CN50']
 
   let activePositionslist = positionslist.data;
   let idref = ""
   if (activePositionslist.affectedDeals.length > 0) { idref = activePositionslist.affectedDeals[0].dealId }
   else { idref = activePositionslist.dealId }
 
-  let margin = 0
-  if(crypto.includes(activePositionslist.epic)){ margin = 20 }
-  if(coin.includes(activePositionslist.epic)){ margin = 100 }
+  let margin = 1
+  if (crypto.includes(activePositionslist.epic)) { margin = 20 }
+  if (coin.includes(activePositionslist.epic)) { margin = 100 }
 
   let response = {
     buyprice: activePositionslist.level,
@@ -72,7 +100,7 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: strin
     margen: (activePositionslist.level * activePositionslist.size) / margin
   }
   return response
-} 
+}
 
 async function beforeDeletePosition(id: string, date: string) {
   const sesiondata = await getSession();
@@ -313,7 +341,7 @@ async function capitalPosition(epic: string, size: number, type: string, strateg
 
     const active: any = await allActivePositions(sesiondata.XSECURITYTOKEN, sesiondata.CST, r.data.dealReference);
 
-    await updateDbPositions(active.idBroker, active.buyprice, active.margen, size, 0,  0, strategy, true, type, 'capital');
+    await updateDbPositions(active.idBroker, active.buyprice, active.margen, size, 0, 0, strategy, true, type, 'capital');
     io.emit('update', { message: 'Nueva posición abierta de ' + strategy + ' en Capital.com' });
     return "posicion abierta";
   } catch (error: any) {
@@ -396,6 +424,6 @@ export async function verifyAndClosePositions() {
 }
 
 
-cron.schedule('*/5 * * * *', async () => {
-  return await verifyAndClosePositions();
-})
+// cron.schedule('*/5 * * * *', async () => {
+//   return await verifyAndClosePositions();
+// })

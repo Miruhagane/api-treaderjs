@@ -14,7 +14,7 @@ import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
 
 // Importa las funciones de los módulos de broker
-import { positions, accountBalance, capitalbuyandsell } from './capital';
+import { positions, accountBalance, capitalbuyandsell, getprices} from './capital';
 import { position } from './binance';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv } from './config/db/dashboard';
 
@@ -72,6 +72,28 @@ app.get('/', (req, res) => {
 app.get('/capital_balance', (req, res) => {
   res.send(accountBalance());
 });
+
+/**
+ * @swagger
+ * /capital_balance:
+ *   post:
+ *     summary: el valor aproximado de la cuenta de simulacion
+ *     description: Obtiene y devuelve el balance de la cuenta de Capital.com.
+ *     responses:
+ *       200:
+ *         description: simulacion .
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ */
+
+app.post('/simulador', async (req, res) => {
+  const payload = req.body;
+
+  let r = await getprices(payload.epic, payload.size);
+  res.send(r);
+})
 
 /**
  * @swagger
@@ -327,9 +349,8 @@ app.get('/ganancia_estrategia', async (req, res) => {
  *                 type: object
  */
 app.get('/ganancia_linechart', async (req, res) => {
-  const days = parseInt(req.query.days as string) || 7;
-  const periodo = (req.query.periodo as 'mensual' | 'diario') || 'mensual';
-  const result = await gananciaAgrupadaPorEstrategia(days, periodo);
+  const periodo = req.query.periodo;
+  const result = await gananciaAgrupadaPorEstrategia(periodo);
   res.json(result);
 })
 
