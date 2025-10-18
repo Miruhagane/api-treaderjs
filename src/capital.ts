@@ -120,11 +120,23 @@ async function beforeDeletePosition(id: string, date: string) {
 
   let activity = r.data.activities[0].details
 
+
+
   let g = 0;
 
-  if (activity.level !== 0 && activity.openPrice) {
-    g = (activity.level - activity.openPrice) * activity.size
+  switch (activity.direction) {
+
+    case ('BUY'):
+      if (activity.level !== 0 && activity.openPrice) {
+        g = (activity.openPrice - activity.level) * activity.size
+      }
+      break;
+    case ('SELL'):
+      if (activity.level !== 0 && activity.openPrice) {
+        g = (activity.level - activity.openPrice) * activity.size
+      }
   }
+
 
 
   return {
@@ -142,7 +154,11 @@ async function beforeDeletePosition(id: string, date: string) {
  */
 export const accountBalance = async () => {
   const sesiondata = await getSession();
+
+  console.log(sesiondata)
+
   const accountBalance = await getAccountBalance(sesiondata.XSECURITYTOKEN, sesiondata.CST);
+  console.log(accountBalance.accounts)
   return accountBalance.accounts;
 }
 
