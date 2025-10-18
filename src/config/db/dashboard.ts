@@ -121,11 +121,11 @@ export async function gananciaAgrupadaPorEstrategia(filter: 'diario' | 'semanal'
 
     switch (filter) {
         case 'diario':
-            days = 1;
+            days = 15;
             periodo = 'diario';
             break;
         case 'semanal':
-            days = 28; // 4 semanas
+            days = 90; // 4 semanas
             periodo = 'semanal';
             break;
         case 'mensual':
