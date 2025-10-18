@@ -277,7 +277,7 @@ async function completarEstrategias(jsonData) {
         // Agregar las estrategias faltantes con ganancia 0
         estrategiasFaltantes.forEach(estrategia => {
             semana.estrategias.push({
-                estrategia: estrategia,
+                estrategia: estrategia.toUpperCase(),
                 ganancia: "0.00"
             });
         });
