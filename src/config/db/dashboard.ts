@@ -129,7 +129,7 @@ export async function gananciaAgrupadaPorEstrategia(filter: 'diario' | 'semanal'
             periodo = 'semanal';
             break;
         case 'mensual':
-            days = 0; 
+            days = 0;
             periodo = 'mensual';
             break;
         case 'todo':
@@ -260,5 +260,28 @@ export async function gananciaAgrupadaPorEstrategia(filter: 'diario' | 'semanal'
         return dataEntry;
     });
 
-    return formattedResult;
+   
+    
+
+    return await completarEstrategias(formattedResult)
+}
+
+async function completarEstrategias(jsonData) {
+     const m = await movementsModel.distinct('strategy')
+    return jsonData.map(semana => {
+        const estrategiasEnSemana = semana.estrategias.map(e => e.estrategia);
+        const estrategiasFaltantes = m.filter(
+            estrategia => !estrategiasEnSemana.includes(estrategia.toUpperCase())
+        );
+        
+        // Agregar las estrategias faltantes con ganancia 0
+        estrategiasFaltantes.forEach(estrategia => {
+            semana.estrategias.push({
+                estrategia: estrategia,
+                ganancia: "0.00"
+            });
+        });
+        
+        return semana;
+    });
 }
