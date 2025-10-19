@@ -129,17 +129,17 @@ async function beforeDeletePosition(id: string, date: string, openPrice: number)
 
   for (let position of activity) {
     if (position.type !== 'WORKING_ORDER' && position.details.workingOrderId) {
-      if (position.details.workingOrderId === id) {
+      if (position.details.workingOrderId === id || position.dealId === id) {
         switch (position.details.direction) {
 
           case ('BUY'):
-            if (position.details.level !== 0 && position.details.openPrice) {
+            if (position.details.level !== 0) {
               g = (openPrice - position.details.level) * position.details.size
               sellPrice = position.details.level
             }
             break;
           case ('SELL'):
-            if (position.details.level !== 0 && position.details.openPrice) {
+            if (position.details.level !== 0) {
               g = (position.details.level - openPrice) * position.details.size
               sellPrice = position.details.level
             }
