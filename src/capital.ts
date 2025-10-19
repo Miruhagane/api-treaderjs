@@ -100,7 +100,7 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: strin
   return response
 }
 
-async function beforeDeletePosition(id: string, date: string) {
+async function beforeDeletePosition(id: string, date: string, openPrice: number) {
 
   const sesiondata = await getSession();
 
@@ -134,14 +134,14 @@ async function beforeDeletePosition(id: string, date: string) {
 
           case ('BUY'):
             if (position.details.level !== 0 && position.details.openPrice) {
-              g = (position.details.openPrice - position.details.level) * position.details.size
+              g = (openPrice - position.details.level) * position.details.size
               sellPrice = position.details.level
             }
             break;
           case ('SELL'):
             if (position.details.level !== 0 && position.details.openPrice) {
-              g = (position.details.level - position.details.openPrice) * position.details.size
-              sellPrice = position.details.openPrice
+              g = (position.details.level - openPrice) * position.details.size
+              sellPrice = position.details.level
             }
         }
 
@@ -325,7 +325,7 @@ export const positions = async (epic: string, size: number, type: string, strate
               }
             });
 
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, 60));
 
             let confirmPosition = await CloseConfirmation(response.data.dealReference)
             let newid = confirmPosition.affectedDeals[0].dealId !== position.idRefBroker ? confirmPosition.affectedDeals[0].dealId : position.idRefBroker
@@ -338,7 +338,7 @@ export const positions = async (epic: string, size: number, type: string, strate
               closeprice = confirmPosition.level
             }
             else {
-              const finalPosition = await beforeDeletePosition(newid, position.date.toISOString())
+              const finalPosition = await beforeDeletePosition(newid, position.date.toISOString(), position.buyPrice)
               ganancia = finalPosition.ganancia
               closeprice = finalPosition.sellprice
             }
@@ -433,7 +433,7 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
         });
 
 
-        await new Promise(resolve => setTimeout(resolve, 250));
+        await new Promise(resolve => setTimeout(resolve, 60));
 
         let confirmPosition = await CloseConfirmation(response.data.dealReference)
         let newid = confirmPosition.affectedDeals[0].dealId !== position.idRefBroker ? confirmPosition.affectedDeals[0].dealId : position.idRefBroker
@@ -448,7 +448,7 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
           closeprice = confirmPosition.level
         }
         else {
-          const finalPosition = await beforeDeletePosition(newid, position.date.toISOString())
+          const finalPosition = await beforeDeletePosition(newid, position.date.toISOString(), position.buyPrice)
           ganancia = finalPosition.ganancia
           closeprice = finalPosition.sellprice
         }
@@ -485,7 +485,7 @@ export async function verifyAndClosePositions() {
   for (const position of m) {
     let exists = openPositions.find((p: any) => p.position.dealId === position.idRefBroker);
     if (!exists) {
-      const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
+      const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString(), position.buyPrice)
 
 
       await updateDbPositions(position._id.toString(), 0, 0, 0, finalPosition.sellprice, finalPosition.ganancia, position.strategy, false, position.type, 'capital');
