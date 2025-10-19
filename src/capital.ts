@@ -69,8 +69,6 @@ export async function getprices(epic: string, size: number,) {
  * @returns {Promise<{buyprice: number, id: string}>} Un objeto con el precio de compra y el ID de la posición.
  */
 async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: string) {
-
-
   const positionslist = await axios.get(`${url_api}confirms/${id}`, {
     headers: {
       'X-SECURITY-TOKEN': XSECURITYTOKEN,
@@ -103,12 +101,13 @@ async function allActivePositions(XSECURITYTOKEN: string, CST: string, id: strin
 }
 
 async function beforeDeletePosition(id: string, date: string) {
+ 
   const sesiondata = await getSession();
 
   let f = new Date(date);
-  const year = f.getFullYear();
-  const month = (f.getMonth() + 1).toString().padStart(2, '0');
-  const day = f.getDate().toString().padStart(2, '0');
+  const year = f.getUTCFullYear();
+  const month = (f.getUTCMonth() + 1).toString().padStart(2, '0');
+  const day = f.getUTCDate().toString().padStart(2, '0');
 
   let r = await axios.get(`${url_api}history/activity?from=${year}-${month}-${day}T00:00:00&to=${year}-${month}-${day}T23:59:59&detailed=true&dealId=${id}`, {
     headers: {
@@ -119,8 +118,6 @@ async function beforeDeletePosition(id: string, date: string) {
   })
 
   let activity = r.data.activities[0].details
-
-
 
   let g = 0;
 
@@ -145,6 +142,7 @@ async function beforeDeletePosition(id: string, date: string) {
   }
 
 }
+
 
 /**
  * @async
@@ -308,7 +306,13 @@ export const positions = async (epic: string, size: number, type: string, strate
               }
             });
 
-            const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
+            await new Promise(resolve => setTimeout(resolve, 60));
+
+            let id = await CloseConfirmation(response.data.dealReference)
+            let newid = id !== position.idRefBroker ? id : position.idRefBroker
+
+            const finalPosition = await beforeDeletePosition(newid, position.date.toISOString())
+
             await updateDbPositions(position._id.toString(), 0, 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital');
             io.emit('update', { message: 'posición cerrada de ' + strategy + ' en Capital.com' });
           } catch (error: any) {
@@ -397,7 +401,16 @@ export async function capitalbuyandsell(epic: string, size: number, type: string
             'Content-Type': 'application/json',
           }
         });
-        const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
+
+
+          await new Promise(resolve => setTimeout(resolve, 60));
+
+            let id = await CloseConfirmation(response.data.dealReference)
+            let newid = id !== position.idRefBroker ? id : position.idRefBroker
+
+            const finalPosition = await beforeDeletePosition(newid, position.date.toISOString())
+
+
         await updateDbPositions(position._id.toString(), 0, 0, 0, finalPosition.sellprice, finalPosition.ganancia, strategy, false, type, 'capital');
         io.emit('update', { message: 'posición cerrada de ' + strategy + ' en Capital.com' });
       } catch (error: any) {
@@ -430,12 +443,29 @@ export async function verifyAndClosePositions() {
     let exists = openPositions.find((p: any) => p.position.dealId === position.idRefBroker);
     if (!exists) {
       const finalPosition = await beforeDeletePosition(position.idRefBroker, position.date.toISOString())
+
+
       await updateDbPositions(position._id.toString(), 0, 0, 0, finalPosition.sellprice, finalPosition.ganancia, position.strategy, false, position.type, 'capital');
       console.log(`Cerrada posición ${position.idRefBroker} en la base de datos porque no existe en Capital.com`);
     }
   }
 
   return "todas las posiciones verificadas";
+
+}
+
+async function CloseConfirmation(ref: string) {
+  const sesiondata = await getSession();
+
+  let r = await axios.get(`${url_api}confirms/${ref}`, {
+    headers: {
+      'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
+      'CST': sesiondata.CST,
+      'Content-Type': 'application/json',
+    }
+  })
+  let response = r.data
+  return response.affectedDeals[0].dealId
 
 }
 
