@@ -207,8 +207,8 @@ async function getAccountBalance(token: string, cst: string) {
 /**
  * @description (Añade a la cola) Abre o cierra una posición simple.
  */
-export const positions = (epic: string, size: number, type: 'buy' | 'sell', strategy: string, io: Server): Promise<string | undefined> => {
-    const channel = getRabbitMQChannel();
+export const positions = async (epic: string, size: number, type: 'buy' | 'sell', strategy: string, io: Server): Promise<string | undefined> => {
+    const channel = await getRabbitMQChannel();
     if (!channel) {
         return Promise.reject('RabbitMQ channel is not available');
     }
@@ -225,9 +225,10 @@ export const positions = (epic: string, size: number, type: 'buy' | 'sell', stra
 /**
  * @description (Añade a la cola) Lógica de trading compleja: cierra posiciones opuestas y abre una nueva.
  */
-export const capitalbuyandsell = (epic: string, size: number, type: string, strategy: string, io: Server): Promise<string | undefined> => {
-    const channel = getRabbitMQChannel();
+export const capitalbuyandsell = async (epic: string, size: number, type: string, strategy: string, io: Server): Promise<string | undefined> => {
+    const channel = await getRabbitMQChannel();
     if (!channel) {
+        console.error('RabbitMQ channel is not available');
         return Promise.reject('RabbitMQ channel is not available');
     }
     const queue = 'capital_tasks';
@@ -236,7 +237,9 @@ export const capitalbuyandsell = (epic: string, size: number, type: string, stra
         description: `capitalbuyandsell: ${type} ${size} ${epic}`,
         payload: { epic, size, type, strategy }
     };
-    channel.sendToQueue(queue, Buffer.from(JSON.stringify(task)), { persistent: true });
+
+   channel.sendToQueue(queue, Buffer.from(JSON.stringify(task)), { persistent: true });
+
     return Promise.resolve('Task added to the queue');
 }
 
@@ -244,6 +247,9 @@ export const capitalbuyandsell = (epic: string, size: number, type: string, stra
  * @description (Lógica interna) Ejecuta la apertura o cierre de una posición.
  */
 export async function _executePosition(epic: string, size: number, type: string, strategy: string, io: Server) {
+
+  console.log(epic, size, type, strategy)
+
     // ... (la lógica de la antigua función positions está aquí)
     const sesiondata = await getSession();
     switch (type) {
@@ -370,6 +376,8 @@ async function _capitalPosition(epic: string, size: number, type: string, strate
  * @description (Lógica interna) Lógica de trading compleja.
  */
 export async function _capitalbuyandsell(epic: string, size: number, type: string, strategy: string, io: Server) {
+  console.log(epic, size, type, strategy)
+
     let m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' }).sort({ myRegionalDate: -1 });
 
     if (m.length === 0) {

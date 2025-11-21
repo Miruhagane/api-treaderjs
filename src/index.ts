@@ -9,7 +9,7 @@ import { Parser } from 'json2csv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { dbconection } from './config/db';
-import { connectRabbitMQ } from './config/rabbitmq';
+import { getRabbitMQChannel, connectRabbitMQ } from './config/rabbitmq';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
@@ -31,8 +31,9 @@ const io = new Server(httpServer, {
 });
 
 // Establece la conexión con la base de datos
-dbconection();
 connectRabbitMQ();
+dbconection();
+getRabbitMQChannel();
 
 // Middleware para parsear el cuerpo de las solicitudes JSON
 app.use(bodyParser.json());

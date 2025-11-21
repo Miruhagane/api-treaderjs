@@ -1,20 +1,20 @@
 import amqp from 'amqplib';
+import type { Connection, Channel } from 'amqplib';
 
-const RABBITMQ_URL = process.env.RABBITMQ_URL;
-
-let channel: amqp.Channel
+let connection: Connection | null = null;
+let channel: Channel | null = null;
 
 export async function connectRabbitMQ() {
     try {
-        const c = await amqp.connect(RABBITMQ_URL);
-        const ch = await c.createChannel();
-        channel = ch;
-        console.log('✅ RabbitMQ connected');
-    } catch (error) {
-        console.error('❌ RabbitMQ connection error:', error);
+        connection = await amqp.connect(process.env.RABBITMQ_URL!);
+        channel = await connection.createChannel();
+
+        console.log("RabbitMQ connected");
+    } catch (err) {
+        console.error("RabbitMQ error:", err);
     }
 }
 
-export function getRabbitMQChannel(): amqp.Channel | null {
+export function getRabbitMQChannel(): Channel | null {
     return channel;
 }
