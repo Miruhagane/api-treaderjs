@@ -52,6 +52,9 @@ Capital_identifier=TU_IDENTIFIER_DE_CAPITAL
 # Conexión a MongoDB
 MongoDb_Conection=mongodb://localhost:27017/trading_api
 
+# URL de conexión de RabbitMQ
+RABBITMQ_URL=amqp://localhost
+
 # Clave de API de Resend para el envío de correos
 RESEND_API_KEY=TU_API_KEY_DE_RESEND
 ```
@@ -68,6 +71,16 @@ RESEND_API_KEY=TU_API_KEY_DE_RESEND
   npm run build
   npm start
   ```
+
+### 4. Ejecutar con Docker
+
+Una vez que hayas configurado tu archivo `.env` con las variables de entorno necesarias, puedes levantar la aplicación usando Docker Compose:
+
+```sh
+docker-compose up --build
+```
+
+La API estará disponible en `http://localhost:3000`.
 
 ## ⚙️ API Endpoints
 
