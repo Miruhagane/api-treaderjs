@@ -3,19 +3,20 @@ import { _executePosition, _capitalbuyandsell } from '../capital';
 import { Server } from 'socket.io';
 
 export async function startCapitalWorker(io: Server) {
-    const channel = getRabbitMQChannel();
+    console.log('Starting capital worker...');
+    const channel = await getRabbitMQChannel();
     if (!channel) {
-        console.error('RabbitMQ channel is not available');
+        console.error('RabbitMQ channel is not available for worker');
         return;
     }
-
     const queue = 'capital_tasks';
     await channel.assertQueue(queue, { durable: true });
 
-    console.log(`[*] Waiting for messages in ${queue}. To exit press CTRL+C`);
+    console.log(`[*] Capital worker waiting for messages in ${queue}.`);
 
     channel.consume(queue, async (msg) => {
         if (msg !== null) {
+            console.log('Message received by capital worker:', msg.content.toString());
             const task = JSON.parse(msg.content.toString());
             console.log(`[x] Received ${task.description}`);
             try {
