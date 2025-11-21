@@ -9,6 +9,7 @@ import { Parser } from 'json2csv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { dbconection } from './config/db';
+import { connectRabbitMQ } from './config/rabbitmq';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
@@ -17,6 +18,7 @@ import swaggerSpec from './config/swagger';
 import { positions, accountBalance, capitalbuyandsell, getprices} from './capital';
 import { position } from './binance';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv } from './config/db/dashboard';
+import { startCapitalWorker } from './workers/capital';
 
 const app = express();
 app.use(cors());
@@ -30,6 +32,7 @@ const io = new Server(httpServer, {
 
 // Establece la conexión con la base de datos
 dbconection();
+connectRabbitMQ();
 
 // Middleware para parsear el cuerpo de las solicitudes JSON
 app.use(bodyParser.json());
@@ -404,4 +407,5 @@ io.on('connection', (socket) => {
 const port = parseInt(process.env.PORT || '3000');
 httpServer.listen(port, () => {
   console.log(`listening on port ${port}`);
+  startCapitalWorker(io);
 });
