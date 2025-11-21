@@ -141,7 +141,8 @@ async function getAccountBalance(token: string, cst: string) {
   
     f.setUTCMinutes(f.getUTCMinutes() + 2);
     const newm = f.getUTCMinutes().toString().padStart(2, '0');
-    let r = await axios.get(`${url_api}history/activity?from=${year}-${month}-${day}T${h}:${m}:00&to=${year}-${month}-${day}T${h}:${newm}:59&detailed=true`, {
+    
+    let r = await axios.get(`${url_api}history/activity?from=${year}-${month}-${day}T00:00:00&to=${year}-${month}-${day}T23:59:59&detailed=true`, {
       headers: {
         'X-SECURITY-TOKEN': sesiondata.XSECURITYTOKEN,
         'CST': sesiondata.CST,
