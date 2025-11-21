@@ -9,8 +9,6 @@ export async function startCapitalWorker(io: Server) {
         console.error('RabbitMQ channel is not available for worker');
         return;
     }
-
-    console.log(channel)
     const queue = 'capital_tasks';
     await channel.assertQueue(queue, { durable: true });
 

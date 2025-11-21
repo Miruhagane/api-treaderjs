@@ -30,10 +30,9 @@ const io = new Server(httpServer, {
   }
 });
 
-// Establece la conexión con la base de datos
-connectRabbitMQ();
-dbconection();
-getRabbitMQChannel();
+
+
+
 
 // Middleware para parsear el cuerpo de las solicitudes JSON
 app.use(bodyParser.json());
@@ -405,8 +404,29 @@ io.on('connection', (socket) => {
 /**
  * Inicia el servidor en el puerto especificado por la variable de entorno o en el 3000 por defecto.
  */
-const port = parseInt(process.env.PORT || '3000');
-httpServer.listen(port, () => {
-  console.log(`listening on port ${port}`);
-  startCapitalWorker(io);
-});
+
+// Establece las conexiones y arranca el servidor
+const startServer = async () => {
+  try {
+    // 1. Conectar a la base de datos
+    await dbconection();
+
+    // 2. Conectar a RabbitMQ y esperar a que esté listo
+    await connectRabbitMQ();
+
+    // 3. Iniciar los workers que dependen de RabbitMQ
+    startCapitalWorker(io);
+
+    // 4. Iniciar el servidor HTTP
+    const port = parseInt(process.env.PORT || '3000');
+    httpServer.listen(port, () => {
+      console.log(`listening on port ${port}`);
+    });
+
+  } catch (error) {
+    console.error("Failed to start the server:", error);
+    process.exit(1);
+  }
+};
+
+startServer();
