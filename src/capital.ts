@@ -8,50 +8,8 @@ import { errorSendEmail } from "./config/mail";
 import { getSession } from "./config/sessionManager";
 import { Server } from "socket.io";
 import cron from 'node-cron';
-import { pre } from "@typegoose/typegoose";
 
-// --- Infraestructura de la Cola de Peticiones Genérica ---
-
-// Interfaz para definir una tarea genérica en la cola
-interface Task {
-  description: string;
-  execute: () => Promise<any>;
-  resolve: (value: any) => void;
-  reject: (reason?: any) => void;
-}
-
-// La cola de tareas
-const requestQueue: Task[] = [];
-
-// Bandera para saber si la cola se está procesando
-let isProcessing = false;
-
-// Función para procesar las tareas de la cola una por una
-async function processQueue() {
-  if (requestQueue.length === 0) {
-    isProcessing = false;
-    return;
-  }
-
-  isProcessing = true;
-  const task = requestQueue.shift();
-
-  if (task) {
-    console.log(`Processing task: ${task.description}`);
-    try {
-      const result = await task.execute();
-      task.resolve(result);
-    } catch (error) {
-      console.error(`Error processing task: ${task.description}`, error);
-      task.reject(error);
-    }
-  }
-
-  // Llama recursivamente para la siguiente tarea
-  processQueue();
-}
-
-// --- Fin de la Infraestructura de la Cola ---
+import { getRabbitMQChannel } from "./config/rabbitmq";
 
 const url_api = 'https://demo-api-capital.backend-capital.com/api/v1/';
 
@@ -250,42 +208,42 @@ async function getAccountBalance(token: string, cst: string) {
  * @description (Añade a la cola) Abre o cierra una posición simple.
  */
 export const positions = (epic: string, size: number, type: 'buy' | 'sell', strategy: string, io: Server): Promise<string | undefined> => {
-  return new Promise((resolve, reject) => {
-    const task: Task = {
-      description: `position: ${type} ${size} ${epic}`,
-      execute: () => _executePosition(epic, size, type, strategy, io),
-      resolve,
-      reject,
-    };
-    requestQueue.push(task);
-    if (!isProcessing) {
-      processQueue();
+    const channel = getRabbitMQChannel();
+    if (!channel) {
+        return Promise.reject('RabbitMQ channel is not available');
     }
-  });
+    const queue = 'capital_tasks';
+    const task = {
+        type: 'position',
+        description: `position: ${type} ${size} ${epic}`,
+        payload: { epic, size, type, strategy }
+    };
+    channel.sendToQueue(queue, Buffer.from(JSON.stringify(task)), { persistent: true });
+    return Promise.resolve('Task added to the queue');
 }
 
 /**
  * @description (Añade a la cola) Lógica de trading compleja: cierra posiciones opuestas y abre una nueva.
  */
 export const capitalbuyandsell = (epic: string, size: number, type: string, strategy: string, io: Server): Promise<string | undefined> => {
-    return new Promise((resolve, reject) => {
-      const task: Task = {
+    const channel = getRabbitMQChannel();
+    if (!channel) {
+        return Promise.reject('RabbitMQ channel is not available');
+    }
+    const queue = 'capital_tasks';
+    const task = {
+        type: 'capitalbuyandsell',
         description: `capitalbuyandsell: ${type} ${size} ${epic}`,
-        execute: () => _capitalbuyandsell(epic, size, type, strategy, io),
-        resolve,
-        reject,
-      };
-      requestQueue.push(task);
-      if (!isProcessing) {
-        processQueue();
-      }
-    });
-  }
+        payload: { epic, size, type, strategy }
+    };
+    channel.sendToQueue(queue, Buffer.from(JSON.stringify(task)), { persistent: true });
+    return Promise.resolve('Task added to the queue');
+}
 
 /**
  * @description (Lógica interna) Ejecuta la apertura o cierre de una posición.
  */
-async function _executePosition(epic: string, size: number, type: string, strategy: string, io: Server) {
+export async function _executePosition(epic: string, size: number, type: string, strategy: string, io: Server) {
     // ... (la lógica de la antigua función positions está aquí)
     const sesiondata = await getSession();
     switch (type) {
@@ -411,7 +369,7 @@ async function _capitalPosition(epic: string, size: number, type: string, strate
 /**
  * @description (Lógica interna) Lógica de trading compleja.
  */
-async function _capitalbuyandsell(epic: string, size: number, type: string, strategy: string, io: Server) {
+export async function _capitalbuyandsell(epic: string, size: number, type: string, strategy: string, io: Server) {
     let m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' }).sort({ myRegionalDate: -1 });
 
     if (m.length === 0) {
