@@ -1,3 +1,4 @@
+// config/rabbitmq.ts
 import amqp from 'amqplib';
 import type { Connection, Channel } from 'amqplib';
 
@@ -10,6 +11,22 @@ export async function connectRabbitMQ() {
         channel = await connection.createChannel();
 
         console.log("RabbitMQ connected");
+
+        // =============================
+        //   CONFIGURAR DELAY EXCHANGE
+        // =============================
+        await channel.assertExchange("delay-exchange", "x-delayed-message", {
+            durable: true,
+            arguments: { "x-delayed-type": "direct" }
+        });
+
+        // Cola donde llegan los mensajes YA retrasados
+        await channel.assertQueue("capital_tasks", { durable: true });
+
+        // Enlazar exchange -> route -> cola
+        await channel.bindQueue("capital_tasks", "delay-exchange", "capital_route");
+
+        console.log("Delay exchange + Queue configured");
     } catch (err) {
         console.error("RabbitMQ error:", err);
     }

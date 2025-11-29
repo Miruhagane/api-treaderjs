@@ -208,41 +208,69 @@ async function getAccountBalance(token: string, cst: string) {
 /**
  * @description (Añade a la cola) Abre o cierra una posición simple.
  */
-export const positions = async (epic: string, size: number, type: 'buy' | 'sell', strategy: string, io: Server): Promise<string | undefined> => {
-    const channel = await getRabbitMQChannel();
-    if (!channel) {
-        return Promise.reject('RabbitMQ channel is not available');
-    }
-    const queue = 'capital_tasks';
+
+export const positions = async (
+    epic: string,
+    size: number,
+    type: 'buy' | 'sell',
+    strategy: string,
+    io: Server,
+): Promise<string | undefined> => {
+
+    const channel = getRabbitMQChannel();
+    if (!channel) return Promise.reject('RabbitMQ channel is not available');
+
     const task = {
         type: 'position',
         description: `position: ${type} ${size} ${epic}`,
         payload: { epic, size, type, strategy }
     };
-    channel.sendToQueue(queue, Buffer.from(JSON.stringify(task)), { persistent: true });
-    return Promise.resolve('Task added to the queue');
-}
+
+    channel.publish(
+        "delay-exchange",
+        "capital_route",
+        Buffer.from(JSON.stringify(task)),
+        {
+            headers: { "x-delay": 1000 },
+            persistent: true
+        }
+    );
+
+    return "Task added with delay (avoid 429)";
+};
 
 /**
  * @description (Añade a la cola) Lógica de trading compleja: cierra posiciones opuestas y abre una nueva.
  */
-export const capitalbuyandsell = async (epic: string, size: number, type: string, strategy: string, io: Server): Promise<string | undefined> => {
-    const channel = await getRabbitMQChannel();
-    if (!channel) {
-        console.error('RabbitMQ channel is not available');
-        return Promise.reject('RabbitMQ channel is not available');
-    }
-    const queue = 'capital_tasks';
+export const capitalbuyandsell = async (
+    epic: string,
+    size: number,
+    type: string,
+    strategy: string,
+    io: Server,
+): Promise<string | undefined> => {
+
+    const channel = getRabbitMQChannel();
+    if (!channel) return Promise.reject('RabbitMQ channel is not available');
+
     const task = {
         type: 'capitalbuyandsell',
         description: `capitalbuyandsell: ${type} ${size} ${epic}`,
         payload: { epic, size, type, strategy }
     };
 
-   channel.sendToQueue(queue, Buffer.from(JSON.stringify(task)), { persistent: true });
+    channel.publish(
+        "delay-exchange",
+        "capital_route",
+        Buffer.from(JSON.stringify(task)),
+        {
+            headers: { "x-delay": 1000 },
+            persistent: true
+        }
+    );
 
-    return Promise.resolve('Task added to the queue');
-}
+    return "Task added with delay (avoid 429)";
+};
 
 /**
  * @description (Lógica interna) Ejecuta la apertura o cierre de una posición.
