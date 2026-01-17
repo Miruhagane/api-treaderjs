@@ -17,6 +17,12 @@ export class movements {
     @prop({ required: true })
     strategy: string
 
+    @prop({ required: false })
+    epic: string
+
+    @prop({ required: false })
+    market: string
+
     /**
      * Indicates if the movement is open.
      */

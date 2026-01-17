@@ -506,6 +506,6 @@ async function CloseConfirmation(ref: string) {
   return response
 }
 
-cron.schedule('*/5 * * * *', async () => {
-  return await verifyAndClosePositions();
-})
+// cron.schedule('*/5 * * * *', async () => {
+//   return await verifyAndClosePositions();
+// })

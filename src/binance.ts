@@ -3,8 +3,10 @@
  */
 
 import axios, { AxiosRequestConfig } from "axios"
-import Binance from 'node-binance-api';
 import dotenv from 'dotenv';
+import { Spot } from '@binance/connector';
+import { USDMClient } from "binance";
+
 dotenv.config();
 
 
@@ -40,16 +42,24 @@ interface Balances {
  * Inicializa el cliente de Binance con las claves de API y secretos desde las variables de entorno.
  * Configurado para usar el entorno de prueba (testnet).
  */
+
+const apiKey = process.env.Binance_ApiKey;
+const apiSecret = process.env.Binance_ApiSecret;
+const targetBaseUrl = 'https://demo-api.binance.com';
+
+
+
 /**
  * Inicializa el cliente de Binance con las claves de API y secretos desde las variables de entorno.
  * Configurado para usar el entorno de prueba (testnet).
  */
-const binance = new Binance({
-    APIKEY: process.env.Binance_ApiKey,
-    APISECRET: process.env.Binance_ApiSecret,
-    test: true
+// Initialize official Binance connector (Spot)
+const spot = new Spot(apiKey, apiSecret, { baseURL: targetBaseUrl });
+const futures = new USDMClient({
+    api_key: process.env.Binance_ApiKey,
+    api_secret: process.env.Binance_ApiSecret,
+    testnet: true,
 });
-
 /**
  * @async
  * @function position
@@ -60,25 +70,26 @@ const binance = new Binance({
  * @param {Server} io - Instancia del servidor Socket.IO para emitir actualizaciones del dashboard.
  * @returns {Promise<string>} Un mensaje indicando el resultado de la operación (éxito o error).
  */
-export const position = async (type: string, strategy: string, io: Server) => {
+export const positionBuy = async (type: string, market: string, epic: string, leverage: number, quantity: number, strategy: string) => {
 
-    console.log(type, strategy);
+    if (type.toUpperCase() === 'BUY') {
 
-    switch (type.toUpperCase()) {
-        case 'BUY':
-            try {
+        try {
+            if (market.toUpperCase() === 'SPOT') {
+                const order = await spot.newOrder(epic, 'BUY', 'MARKET', { quantity: quantity });
 
-                const order = await binance.marketBuy("BTCUSDT", 0, { quoteOrderQty: 5 });
-
-                let qty = parseFloat(order.fills[0].qty);
-                let price = parseFloat(order.fills[0].price);
-
+                const fill = order.data.fills[0];
 
                 const movements = new movementsModel({
-                    idRefBroker: order.orderId,
+                    idRefBroker: order.data.orderId,
                     strategy: strategy,
+                    market: market.toUpperCase(),
+                    type: type,
+                    margen: 0,
+                    size: quantity,
+                    epic: epic,
                     open: true,
-                    buyPrice: price * qty,
+                    buyPrice: fill.price * fill.qty,
                     sellPrice: 0,
                     ganancia: 0,
                     broker: 'binance',
@@ -88,56 +99,249 @@ export const position = async (type: string, strategy: string, io: Server) => {
 
                 await movements.save();
 
-                io.emit('dashboard_update', { type: type, strategy: strategy });
-
-                return " Orden de compra ejecutada y registrada en la base de datos."
-
+                // io.emit('dashboard_update', { type: type, strategy: strategy });
             }
-            catch (e) {
-                let asusnto = "error al generar la orden de binance, strategia:" + strategy;
-                await errorSendEmail(asusnto, e.mensaje)
-                console.error(`❌ Error closing position ${e.message}:`)
-                return "error al generar la orden"
+            else if (market.toUpperCase() === 'FUTURE') {
+
+                await futures.setLeverage({ symbol: epic, leverage: leverage });
+
+                const order = await futures.submitNewOrder({ symbol: epic, side: 'BUY', type: 'MARKET', quantity: quantity });
+
+                const position = await futures.getOrder({ symbol: epic, orderId: order.orderId });
+
+                const movements = new movementsModel({
+                    idRefBroker: position.orderId,
+                    strategy: strategy,
+                    market: market.toUpperCase(),
+                    type: type,
+                    margen: leverage,
+                    size: quantity,
+                    epic: epic,
+                    open: true,
+                    buyPrice: position.cumQuote,
+                    sellPrice: 0,
+                    ganancia: 0,
+                    broker: 'binance',
+                    date: new Date(),
+                    myRegionalDate: new Date().setHours(new Date().getHours() - 5)
+                })
+                await movements.save();
             }
-            break;
+            else {
+                return "Tipo de mercado no soportado.";
+            }
 
-        case 'SELL':
-            try {
+            return " Orden de compra ejecutada y registrada en la base de datos."
+
+        }
+        catch (error) {
+            console.error("Error de Binance:", JSON.stringify(error, null, 2));
+            return "Error en la ejecución de la orden.";
+        }
 
 
-                // Buscamos todas las órdenes de compra abiertas para la estrategia dada.
+    }
+
+
+
+
+
+    if (type.toUpperCase() === 'SELL') {
+
+        try {
+
+            if (market.toUpperCase() === 'SPOT') {
+
                 const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'binance' });
 
                 if (ordenes.length > 0) {
-
-
                     for (let orden of ordenes) {
 
-                        const order = await binance.marketSell("BTCUSDT", 0, { quoteOrderQty: 5 });
-                        let qty = parseFloat(order.fills[0].qty);
-                        let price = parseFloat(order.fills[0].price);
-                        let sellPrice = price * qty;
+                        const order = await spot.newOrder(orden.epic, 'SELL', 'MARKET', { quantity: orden.size });
+                        const fill = order.data.fills[0];
 
-                        let ganancia = (sellPrice - orden.buyPrice) * 0.998;
-                        let updatePromise = await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: sellPrice, ganancia: ganancia } });
-                        console.log(updatePromise);
+                        let ganancia = fill.price * fill.qty - orden.buyPrice;
+                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: fill.price * fill.qty, ganancia: ganancia } });
 
+                        // io.emit('dashboard_update', { type: type, strategy: strategy });
 
                     }
-
-                    io.emit('dashboard_update', { type: type, strategy: strategy });
-                    return "Orden de venta completada y registros actualizados.";
-
-                } else {
-                    return "No hay órdenes abiertas para vender.";
                 }
-            } catch (e) {
-                let asusnto = "Error al generar la orden de venta en Binance, estrategia:" + strategy;
-                await errorSendEmail(asusnto, e.mensaje)
-                console.error(`❌ Error closing position ${e.message}:`);
-                return "error al generar la orden de venta"
             }
-            break;
+
+            else if (market.toUpperCase() === 'FUTURE') {
+
+                const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'binance' });
+
+                if (ordenes.length > 0) {
+                    for (let orden of ordenes) {
+                        const order = await futures.submitNewOrder({ symbol: orden.epic, side: 'SELL', type: 'MARKET', quantity: orden.size });
+
+                        const position = await futures.getOrder({ symbol: orden.epic, orderId: order.orderId });
+
+                        const trades = await futures.getAccountTrades({ symbol: orden.epic });
+
+                        const cierre = trades.filter(t => t.orderId === order.orderId);
+
+                        const totalQty = cierre.reduce((acc, t) => acc + Number(t.qty), 0);
+                        const totalQuote = cierre.reduce((acc, t) => acc + Number(t.quoteQty), 0);
+                        const avgPrice = totalQuote / totalQty;
+                        const totalPnl = cierre.reduce((acc, t) => acc + Number(t.realizedPnl), 0);
+                        const totalCommission = cierre.reduce((acc, t) => acc + Number(t.commission), 0);
+
+                        let ganancia = Number(position.cumQuote) - orden.buyPrice;
+                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: avgPrice, ganancia: totalPnl } });
+                    }
+                }
+
+            }
+            else {
+                return "Tipo de mercado no soportado.";
+            }
+
+            return " Orden de venta ejecutada y registros actualizados."
+        } catch (error) {
+            console.error("Error de Binance:", JSON.stringify(error, null, 2));
+            return "Error en la ejecución de la orden.";
+        }
+
     }
 
+
+}
+
+export const positionSell = async (type: string, market: string, epic: string, leverage: number, quantity: number, strategy: string) => {
+
+
+     if (type.toUpperCase() === 'SELL') {
+
+        try {
+            if (market.toUpperCase() === 'SPOT') {
+                const order = await spot.newOrder(epic, 'SELL', 'MARKET', { quantity: quantity });
+
+                const fill = order.data.fills[0];
+
+                const movements = new movementsModel({
+                    idRefBroker: order.data.orderId,
+                    strategy: strategy,
+                    market: market.toUpperCase(),
+                    type: type,
+                    margen: 0,
+                    size: quantity,
+                    epic: epic,
+                    open: true,
+                    buyPrice: fill.price * fill.qty,
+                    sellPrice: 0,
+                    ganancia: 0,
+                    broker: 'binance',
+                    date: new Date(),
+                    myRegionalDate: new Date().setHours(new Date().getHours() - 5)
+                })
+
+                await movements.save();
+
+                // io.emit('dashboard_update', { type: type, strategy: strategy });
+            }
+            else if (market.toUpperCase() === 'FUTURE') {
+
+                await futures.setLeverage({ symbol: epic, leverage: leverage });
+
+                const order = await futures.submitNewOrder({ symbol: epic, side: 'SELL', type: 'MARKET', quantity: quantity });
+
+                const position = await futures.getOrder({ symbol: epic, orderId: order.orderId });
+
+                const movements = new movementsModel({
+                    idRefBroker: position.orderId,
+                    strategy: strategy,
+                    market: market.toUpperCase(),
+                    type: type,
+                    margen: leverage,
+                    size: quantity,
+                    epic: epic,
+                    open: true,
+                    buyPrice: position.cumQuote,
+                    sellPrice: 0,
+                    ganancia: 0,
+                    broker: 'binance',
+                    date: new Date(),
+                    myRegionalDate: new Date().setHours(new Date().getHours() - 5)
+                })
+                await movements.save();
+            }
+            else {
+                return "Tipo de mercado no soportado.";
+            }
+
+            return " Orden de compra ejecutada y registrada en la base de datos."
+
+        }
+        catch (error) {
+            console.error("Error de Binance:", JSON.stringify(error, null, 2));
+            return "Error en la ejecución de la orden.";
+        }
+
+
+    }
+
+
+
+
+
+    if (type.toUpperCase() === 'BUY') {
+
+        try {
+
+            if (market.toUpperCase() === 'SPOT') {
+
+                const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'binance' });
+
+                if (ordenes.length > 0) {
+                    for (let orden of ordenes) {
+
+                        const order = await spot.newOrder(orden.epic, 'BUY', 'MARKET', { quantity: orden.size });
+                        const fill = order.data.fills[0];
+
+                        let ganancia = fill.price * fill.qty - orden.buyPrice;
+                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: fill.price * fill.qty, ganancia: ganancia } });
+
+                        // io.emit('dashboard_update', { type: type, strategy: strategy });
+
+                    }
+                }
+            }
+
+            else if (market.toUpperCase() === 'FUTURE') {
+
+                const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'binance' });
+
+                if (ordenes.length > 0) {
+                    for (let orden of ordenes) {
+                        const order = await futures.submitNewOrder({ symbol: orden.epic, side: 'BUY', type: 'MARKET', quantity: orden.size });
+
+                        const position = await futures.getOrder({ symbol: orden.epic, orderId: order.orderId });
+
+                        const trades = await futures.getAccountTrades({ symbol: orden.epic });
+
+                        const cierre = trades.filter(t => t.orderId === order.orderId);
+
+                        const totalQty = cierre.reduce((acc, t) => acc + Number(t.qty), 0);
+                        const totalQuote = cierre.reduce((acc, t) => acc + Number(t.quoteQty), 0);
+                        const avgPrice = totalQuote / totalQty;
+                        const totalPnl = cierre.reduce((acc, t) => acc + Number(t.realizedPnl), 0);
+                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: avgPrice, ganancia: totalPnl } });
+                    }
+                }
+
+            }
+            else {
+                return "Tipo de mercado no soportado.";
+            }
+
+            return " Orden de venta ejecutada y registros actualizados."
+        } catch (error) {
+            console.error("Error de Binance:", JSON.stringify(error, null, 2));
+            return "Error en la ejecución de la orden.";
+        }
+
+    }
 }

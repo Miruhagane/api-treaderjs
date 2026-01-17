@@ -16,7 +16,7 @@ import swaggerSpec from './config/swagger';
 
 // Importa las funciones de los módulos de broker
 import { positions, accountBalance, capitalbuyandsell, getprices} from './capital';
-import { position } from './binance';
+import { positionBuy, positionSell } from './binance';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv } from './config/db/dashboard';
 import { startCapitalWorker } from './workers/capital';
 
@@ -216,9 +216,16 @@ app.post('/capital_buyandsell', async (req, res) => {
  *       200:
  *         description: Posición creada.
  */
-app.post('/binance', (req, res) => {
+app.post('/binance/buy', (req, res) => {
   const payload = req.body;
-  const result = position(payload.type, payload.strategy, io);
+  console.log(payload)
+  const result = positionBuy(payload.type, payload.market, payload.epic, payload.leverage, payload.size, payload.strategy);
+  res.send({ data: result });
+});
+
+app.post('/binance/sell', (req, res) => {
+  const payload = req.body;
+  const result = positionSell(payload.type, payload.market, payload.epic, payload.leverage, payload.size, payload.strategy);
   res.send({ data: result });
 });
 
