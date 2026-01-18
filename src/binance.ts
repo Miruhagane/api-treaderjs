@@ -177,8 +177,6 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     for (let orden of ordenes) {
                         const order = await futures.submitNewOrder({ symbol: orden.epic, side: 'SELL', type: 'MARKET', quantity: orden.size });
 
-                        const position = await futures.getOrder({ symbol: orden.epic, orderId: order.orderId });
-
                         const trades = await futures.getAccountTrades({ symbol: orden.epic });
 
                         const cierre = trades.filter(t => t.orderId === order.orderId);
@@ -187,9 +185,6 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                         const totalQuote = cierre.reduce((acc, t) => acc + Number(t.quoteQty), 0);
                         const avgPrice = totalQuote / totalQty;
                         const totalPnl = cierre.reduce((acc, t) => acc + Number(t.realizedPnl), 0);
-                        const totalCommission = cierre.reduce((acc, t) => acc + Number(t.commission), 0);
-
-                        let ganancia = Number(position.cumQuote) - orden.buyPrice;
                         await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: avgPrice, ganancia: totalPnl } });
                     }
                 }
@@ -317,9 +312,6 @@ export const positionSell = async (type: string, market: string, epic: string, l
                 if (ordenes.length > 0) {
                     for (let orden of ordenes) {
                         const order = await futures.submitNewOrder({ symbol: orden.epic, side: 'BUY', type: 'MARKET', quantity: orden.size });
-
-                        const position = await futures.getOrder({ symbol: orden.epic, orderId: order.orderId });
-
                         const trades = await futures.getAccountTrades({ symbol: orden.epic });
 
                         const cierre = trades.filter(t => t.orderId === order.orderId);
