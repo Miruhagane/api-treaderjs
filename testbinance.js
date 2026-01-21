@@ -1,5 +1,6 @@
 const axios = require('axios');
 const crypto = require('crypto');
+const util = require('util');
 
 async function getServerTime(baseURL) {
   const res = await axios.get(`${baseURL}/api/v3/time`, { timeout: 10000 });
@@ -10,20 +11,42 @@ function sign(queryString, secret) {
   return crypto.createHmac('sha256', secret).update(queryString).digest('hex');
 }
 
-async function testOrder() {
+function safeLogError(label, err) {
+  try {
+    console.error(`${label} message:`, err?.message ?? err);
+    if (err?.stack) console.error(`${label} stack:`, err.stack);
+    if (err?.response) {
+      console.error(`${label} response status:`, err.response.status);
+      console.error(`${label} response data:`, util.inspect(err.response.data, { depth: 5 }));
+      console.error(`${label} response headers:`, util.inspect(err.response.headers, { depth: 2 }));
+    }
+    if (err?.config) {
+      console.error(`${label} request config:`, util.inspect({
+        method: err.config.method,
+        url: err.config.url,
+        headers: err.config.headers,
+        data: err.config.data
+      }, { depth: 4 }));
+    }
+  } catch (loggingErr) {
+    console.error('Error while logging:', loggingErr);
+  }
+}
+
+(async function main() {
   const baseURL = process.env.BINANCE_BASEURL || 'https://demo-api.binance.com';
   const apiKey = process.env.Binance_ApiKey;
   const secret = process.env.Binance_ApiSecret;
+  const useTest = (process.env.BINANCE_USE_TEST === '1' || process.env.BINANCE_USE_TEST === 'true' || process.env.BINANCE_USE_TEST === 1);
+
   if (!apiKey || !secret) {
-    console.error('Faltan BINANCE_APIKEY o BINANCE_SECRET en variables de entorno.');
+    console.error('Faltan Binance_ApiKey o Binance_ApiSecret en variables de entorno.');
     process.exit(1);
   }
 
   try {
-    // 1) sincronizar tiempo con Binance
     const serverTime = await getServerTime(baseURL);
 
-    // 2) construir parámetros (timestamp desde serverTime)
     const paramsObj = {
       symbol: 'BTCUSDT',
       side: 'BUY',
@@ -32,25 +55,17 @@ async function testOrder() {
       timestamp: serverTime.toString()
     };
 
-    // Construir query string (orden determinista)
-    const queryString = Object.keys(paramsObj)
-      .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(paramsObj[k])}`)
-      .join('&');
+    // Ordenar claves para determinismo (opcional pero ayuda)
+    const keys = Object.keys(paramsObj).sort();
+    const queryString = keys.map(k => `${encodeURIComponent(k)}=${encodeURIComponent(paramsObj[k])}`).join('&');
 
-    // 3) firmar la query string
     const signature = sign(queryString, secret);
-
-    // 4) cuerpo form-urlencoded con signature incluido
     const body = `${queryString}&signature=${signature}`;
 
-    // Escoge endpoint: /order/test para no crear orden real
-    const useTest = (process.env.BINANCE_USE_TEST === '1' || process.env.BINANCE_USE_TEST === 'true');
     const path = useTest ? '/api/v3/order/test' : '/api/v3/order';
-
-    // 5) POST con content-type application/x-www-form-urlencoded
     const url = `${baseURL}${path}`;
 
-    console.log('Request URL:', url);
+    console.log('Calling URL:', url);
     console.log('Request body (signature redacted):', body.replace(/signature=[a-f0-9]+/i, 'signature=REDACTED'));
 
     const res = await axios.post(url, body, {
@@ -62,28 +77,11 @@ async function testOrder() {
     });
 
     console.log('OK:', res.status);
-    console.log(JSON.stringify(res.data, null, 2));
+    console.log('Response data:', util.inspect(res.data, { depth: 6 }));
+    process.exit(0);
   } catch (err) {
-    console.error('ERROR status:', err.response?.status ?? err.code ?? err.message);
-    console.error('ERROR headers:', JSON.stringify(err.response?.headers ?? {}, null, 2));
-    console.error('ERROR data:', JSON.stringify(err.response?.data ?? err.message, null, 2));
-
-    // Si hubo request body/url, mostrar (con signature redacted) para diagnóstico
-    try {
-      if (err.config && err.config.url) {
-        const shownUrl = err.config.url.replace(/signature=[a-f0-9]+/i, 'signature=REDACTED');
-        console.error('Sent URL (redacted):', shownUrl);
-      }
-      if (err.config && err.config.data) {
-        const shownBody = String(err.config.data).replace(/signature=[a-f0-9]+/i, 'signature=REDACTED');
-        console.error('Sent body (redacted):', shownBody);
-      }
-    } catch (e) {
-      // ignore
-    }
-
+    safeLogError('Order ERROR', err);
+    // Si recibes 451 revisa KYC/eligibility en la cuenta y la ubicación/IP del entorno
     process.exit(1);
   }
-}
-
-testOrder();    
+})();
