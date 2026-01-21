@@ -35,10 +35,11 @@ function safeLogError(label, err) {
 
 (async function main() {
   const baseURL = process.env.BINANCE_BASEURL || 'https://demo-api.binance.com';
-  const apiKey = process.env.Binance_ApiKey;
+  const apiKey =  process.env.Binance_ApiKey;
   const secret = process.env.Binance_ApiSecret;
   const useTest = (process.env.BINANCE_USE_TEST === '1' || process.env.BINANCE_USE_TEST === 'true' || process.env.BINANCE_USE_TEST === 1);
 
+  console.log(apiKey, secret)
   if (!apiKey || !secret) {
     console.error('Faltan Binance_ApiKey o Binance_ApiSecret en variables de entorno.');
     process.exit(1);
