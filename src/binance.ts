@@ -134,9 +134,18 @@ export const positionBuy = async (type: string, market: string, epic: string, le
             return " Orden de compra ejecutada y registrada en la base de datos."
 
         }
-        catch (error) {
-            console.error("Error de Binance:", JSON.stringify(error, null, 2));
-            return "Error en la ejecución de la orden.";
+        catch (error: any) {
+            console.error('spot.newOrder ERROR:', error.message ?? error);
+            if (error.response) {
+                console.error('Response status:', error.response.status);
+                console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+            }
+            if (error.request) {
+                console.error('Request sent (headers):', JSON.stringify(error.request?.headers ?? {}, null, 2));
+                console.error('Request data:', error.request?.data ?? '<no data>');
+            }
+            console.error('Full error object:', JSON.stringify(Object.getOwnPropertyNames(error).reduce((acc: any, k) => { acc[k] = (error as any)[k]; return acc; }, {}), null, 2));
+            throw error; // o return mensaje de error
         }
 
 
@@ -208,7 +217,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 export const positionSell = async (type: string, market: string, epic: string, leverage: number, quantity: number, strategy: string) => {
 
 
-     if (type.toUpperCase() === 'SELL') {
+    if (type.toUpperCase() === 'SELL') {
 
         try {
             if (market.toUpperCase() === 'SPOT') {
