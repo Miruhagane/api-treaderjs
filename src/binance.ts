@@ -6,6 +6,7 @@ import axios, { AxiosRequestConfig } from "axios"
 import dotenv from 'dotenv';
 import { Spot } from '@binance/connector';
 import { USDMClient } from "binance";
+import util from 'util';
 
 dotenv.config();
 
@@ -17,42 +18,65 @@ import { Server } from "socket.io";
 import { dashboard } from "./config/db/dashboard";
 
 /**
- * @interface CryptoBalance
- * @description Define la estructura del balance de una criptomoneda, incluyendo lo disponible y lo que está en órdenes.
- * @property {string} available - Cantidad de la criptomoneda disponible para operar.
- * @property {string} onOrder - Cantidad de la criptomoneda que está actualmente en órdenes abiertas.
+ * Helpers de logging/validación
+ */
+function redact(key?: string) {
+    if (!key) return '<MISSING>';
+    return key.length > 8 ? `${key.slice(0,4)}...${key.slice(-4)}` : '<SET>';
+}
+
+function safeLogError(label: string, err: any) {
+    try {
+        console.error(`${label} message:`, err?.message ?? err);
+        if (err?.stack) console.error(`${label} stack:`, err.stack);
+        if (err?.response) {
+            console.error(`${label} response status:`, err.response.status);
+            console.error(`${label} response data:`, util.inspect(err.response.data, { depth: 6 }));
+            console.error(`${label} response headers:`, util.inspect(err.response.headers, { depth: 2 }));
+        }
+        if (err?.config) {
+            console.error(`${label} request config:`, util.inspect({
+                method: err.config.method,
+                url: err.config.url,
+                headers: err.config.headers,
+                data: err.config.data
+            }, { depth: 4 }));
+        }
+    } catch (loggingErr) {
+        console.error('Error while logging error:', loggingErr);
+    }
+}
+
+function validateEnv() {
+    console.log('BINANCE config:');
+    console.log('  Binance_ApiKey:', redact(process.env.Binance_ApiKey));
+    console.log('  Binance_ApiSecret:', process.env.Binance_ApiSecret ? '<SET>' : '<MISSING>');
+    console.log('  targetBaseUrl:', targetBaseUrl);
+    console.log('Node version:', process.version);
+}
+
+/**
+ * Tipos
  */
 interface CryptoBalance {
     available: string;
     onOrder: string;
 }
 
-/**
- * @interface Balances
- * @description Define la estructura del objeto de balances, que puede contener múltiples criptomonedas.
- * @property {CryptoBalance} [key: string] - Permite acceder a cualquier balance de criptomoneda por su símbolo.
- * @property {CryptoBalance} [BTC] - Balance específico para Bitcoin (opcional).
- */
 interface Balances {
-    [key: string]: CryptoBalance; // Índice de firma para cualquier propiedad
-    BTC?: CryptoBalance;          // Opcional
+    [key: string]: CryptoBalance;
+    BTC?: CryptoBalance;
 }
 
 /**
- * Inicializa el cliente de Binance con las claves de API y secretos desde las variables de entorno.
- * Configurado para usar el entorno de prueba (testnet).
+ * Configuración
  */
-
 const apiKey = process.env.Binance_ApiKey;
 const apiSecret = process.env.Binance_ApiSecret;
-const targetBaseUrl = 'https://demo-api.binance.com';
+const targetBaseUrl = process.env.BINANCE_BASEURL || 'https://demo-api.binance.com';
 
+validateEnv();
 
-
-/**
- * Inicializa el cliente de Binance con las claves de API y secretos desde las variables de entorno.
- * Configurado para usar el entorno de prueba (testnet).
- */
 // Initialize official Binance connector (Spot)
 const spot = new Spot(apiKey, apiSecret, { baseURL: targetBaseUrl });
 const futures = new USDMClient({
@@ -60,15 +84,9 @@ const futures = new USDMClient({
     api_secret: process.env.Binance_ApiSecret,
     testnet: true,
 });
+
 /**
- * @async
- * @function position
- * @description Ejecuta una orden de mercado (compra o venta) para BTCUSDT en Binance y registra el movimiento.
- *              En caso de compra, crea un nuevo registro de movimiento. En caso de venta, actualiza los movimientos abiertos existentes.
- * @param {string} type - El tipo de operación a realizar ('BUY' para compra, 'SELL' para venta).
- * @param {string} strategy - La estrategia de trading asociada a esta operación.
- * @param {Server} io - Instancia del servidor Socket.IO para emitir actualizaciones del dashboard.
- * @returns {Promise<string>} Un mensaje indicando el resultado de la operación (éxito o error).
+ * positionBuy
  */
 export const positionBuy = async (type: string, market: string, epic: string, leverage: number, quantity: number, strategy: string) => {
 
@@ -76,9 +94,40 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
         try {
             if (market.toUpperCase() === 'SPOT') {
+                console.log(`Attempting SPOT BUY: epic=${epic}, quantity=${quantity}`);
+                // Sanity check
+                if (!apiKey || !apiSecret) {
+                    throw new Error('Missing Binance_ApiKey or Binance_ApiSecret');
+                }
+
                 const order = await spot.newOrder(epic, 'BUY', 'MARKET', { quantity: quantity });
 
-                const fill = order.data.fills[0];
+                // seguridad: validar que fills exista antes de acceder
+                const fills = order?.data?.fills;
+                if (!fills || fills.length === 0) {
+                    console.warn('spot.newOrder returned no fills. Full order response:', util.inspect(order?.data ?? order, { depth: 4 }));
+                    // decide cómo manejarlo: aquí retornamos un mensaje y guardamos registro parcial
+                    const movementsPartial = new movementsModel({
+                        idRefBroker: order?.data?.orderId ?? null,
+                        strategy,
+                        market: market.toUpperCase(),
+                        type,
+                        margen: 0,
+                        size: quantity,
+                        epic,
+                        open: true,
+                        buyPrice: 0,
+                        sellPrice: 0,
+                        ganancia: 0,
+                        broker: 'binance',
+                        date: new Date(),
+                        myRegionalDate: new Date().setHours(new Date().getHours() - 5)
+                    });
+                    await movementsPartial.save();
+                    return 'Orden ejecutada pero no se recibieron fills; revisa logs.';
+                }
+
+                const fill = fills[0];
 
                 const movements = new movementsModel({
                     idRefBroker: order.data.orderId,
@@ -89,7 +138,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     size: quantity,
                     epic: epic,
                     open: true,
-                    buyPrice: fill.price * fill.qty,
+                    buyPrice: Number(fill.price) * Number(fill.qty),
                     sellPrice: 0,
                     ganancia: 0,
                     broker: 'binance',
@@ -99,7 +148,6 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
                 await movements.save();
 
-                // io.emit('dashboard_update', { type: type, strategy: strategy });
             }
             else if (market.toUpperCase() === 'FUTURE') {
 
@@ -135,25 +183,12 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
         }
         catch (error: any) {
-            console.error('spot.newOrder ERROR:', error.message ?? error);
-            if (error.response) {
-                console.error('Response status:', error.response.status);
-                console.error('Response data:', JSON.stringify(error.response.data, null, 2));
-            }
-            if (error.request) {
-                console.error('Request sent (headers):', JSON.stringify(error.request?.headers ?? {}, null, 2));
-                console.error('Request data:', error.request?.data ?? '<no data>');
-            }
-            console.error('Full error object:', JSON.stringify(Object.getOwnPropertyNames(error).reduce((acc: any, k) => { acc[k] = (error as any)[k]; return acc; }, {}), null, 2));
-            throw error; // o return mensaje de error
+            safeLogError('spot.newOrder ERROR', error);
+            throw error; // o return un mensaje controlado
         }
 
 
     }
-
-
-
-
 
     if (type.toUpperCase() === 'SELL') {
 
@@ -166,13 +201,18 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                 if (ordenes.length > 0) {
                     for (let orden of ordenes) {
 
+                        console.log(`Attempting SPOT SELL for epic=${orden.epic}, qty=${orden.size}`);
                         const order = await spot.newOrder(orden.epic, 'SELL', 'MARKET', { quantity: orden.size });
-                        const fill = order.data.fills[0];
+                        const fills = order?.data?.fills;
+                        if (!fills || fills.length === 0) {
+                            console.warn('spot.newOrder (SELL) returned no fills:', util.inspect(order?.data ?? order, { depth: 4 }));
+                            await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
+                            continue;
+                        }
+                        const fill = fills[0];
 
-                        let ganancia = fill.price * fill.qty - orden.buyPrice;
-                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: fill.price * fill.qty, ganancia: ganancia } });
-
-                        // io.emit('dashboard_update', { type: type, strategy: strategy });
+                        let ganancia = Number(fill.price) * Number(fill.qty) - orden.buyPrice;
+                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: Number(fill.price) * Number(fill.qty), ganancia: ganancia } });
 
                     }
                 }
@@ -205,7 +245,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
             return " Orden de venta ejecutada y registros actualizados."
         } catch (error) {
-            console.error("Error de Binance:", JSON.stringify(error, null, 2));
+            safeLogError('positionBuy SELL ERROR', error);
             return "Error en la ejecución de la orden.";
         }
 
@@ -216,33 +256,38 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
 export const positionSell = async (type: string, market: string, epic: string, leverage: number, quantity: number, strategy: string) => {
 
-
     if (type.toUpperCase() === 'SELL') {
 
         try {
             if (market.toUpperCase() === 'SPOT') {
+                console.log(`Attempting SPOT (positionSell) SELL: epic=${epic}, qty=${quantity}`);
                 const order = await spot.newOrder(epic, 'SELL', 'MARKET', { quantity: quantity });
 
-                const fill = order.data.fills[0];
+                const fills = order?.data?.fills;
+                if (!fills || fills.length === 0) {
+                    console.warn('spot.newOrder returned no fills (positionSell):', util.inspect(order?.data ?? order, { depth: 4 }));
+                } else {
+                    const fill = fills[0];
 
-                const movements = new movementsModel({
-                    idRefBroker: order.data.orderId,
-                    strategy: strategy,
-                    market: market.toUpperCase(),
-                    type: type,
-                    margen: 0,
-                    size: quantity,
-                    epic: epic,
-                    open: true,
-                    buyPrice: fill.price * fill.qty,
-                    sellPrice: 0,
-                    ganancia: 0,
-                    broker: 'binance',
-                    date: new Date(),
-                    myRegionalDate: new Date().setHours(new Date().getHours() - 5)
-                })
+                    const movements = new movementsModel({
+                        idRefBroker: order.data.orderId,
+                        strategy: strategy,
+                        market: market.toUpperCase(),
+                        type: type,
+                        margen: 0,
+                        size: quantity,
+                        epic: epic,
+                        open: true,
+                        buyPrice: Number(fill.price) * Number(fill.qty),
+                        sellPrice: 0,
+                        ganancia: 0,
+                        broker: 'binance',
+                        date: new Date(),
+                        myRegionalDate: new Date().setHours(new Date().getHours() - 5)
+                    })
 
-                await movements.save();
+                    await movements.save();
+                }
 
                 // io.emit('dashboard_update', { type: type, strategy: strategy });
             }
@@ -280,16 +325,12 @@ export const positionSell = async (type: string, market: string, epic: string, l
 
         }
         catch (error) {
-            console.error("Error de Binance:", JSON.stringify(error, null, 2));
+            safeLogError('positionSell SELL ERROR', error);
             return "Error en la ejecución de la orden.";
         }
 
 
     }
-
-
-
-
 
     if (type.toUpperCase() === 'BUY') {
 
@@ -302,13 +343,18 @@ export const positionSell = async (type: string, market: string, epic: string, l
                 if (ordenes.length > 0) {
                     for (let orden of ordenes) {
 
+                        console.log(`Attempting SPOT (positionSell) BUY for epic=${orden.epic}, qty=${orden.size}`);
                         const order = await spot.newOrder(orden.epic, 'BUY', 'MARKET', { quantity: orden.size });
-                        const fill = order.data.fills[0];
+                        const fills = order?.data?.fills;
+                        if (!fills || fills.length === 0) {
+                            console.warn('spot.newOrder (BUY close) returned no fills:', util.inspect(order?.data ?? order, { depth: 4 }));
+                            await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
+                            continue;
+                        }
+                        const fill = fills[0];
 
-                        let ganancia = fill.price * fill.qty - orden.buyPrice;
-                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: fill.price * fill.qty, ganancia: ganancia } });
-
-                        // io.emit('dashboard_update', { type: type, strategy: strategy });
+                        let ganancia = Number(fill.price) * Number(fill.qty) - orden.buyPrice;
+                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: Number(fill.price) * Number(fill.qty), ganancia: ganancia } });
 
                     }
                 }
@@ -340,7 +386,7 @@ export const positionSell = async (type: string, market: string, epic: string, l
 
             return " Orden de venta ejecutada y registros actualizados."
         } catch (error) {
-            console.error("Error de Binance:", JSON.stringify(error, null, 2));
+            safeLogError('positionSell BUY ERROR', error);
             return "Error en la ejecución de la orden.";
         }
 
