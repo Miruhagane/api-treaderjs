@@ -73,7 +73,7 @@ interface Balances {
  */
 const apiKey = process.env.Binance_ApiKey;
 const apiSecret = process.env.Binance_ApiSecret;
-const targetBaseUrl = process.env.BINANCE_BASEURL || 'https://demo-api.binance.com';
+const targetBaseUrl = process.env.BINANCE_BASEURL || 'https://testnet.binance.vision';
 
 validateEnv();
 
