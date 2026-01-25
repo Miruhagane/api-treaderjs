@@ -219,12 +219,20 @@ app.post('/capital_buyandsell', async (req, res) => {
 app.post('/binance/buy', (req, res) => {
   const payload = req.body;
   console.log(payload)
+  if(payload.market.toUpperCase() === 'SPOT')
+  {
+    return res.send({data: 'Operaciones Spot no permitidas'});
+  }
   const result = positionBuy(payload.type, payload.market, payload.epic, payload.leverage, payload.size, payload.strategy);
   res.send({ data: result });
 });
 
 app.post('/binance/sell', (req, res) => {
   const payload = req.body;
+    if(payload.market.toUpperCase() === 'SPOT')
+  {
+    return res.send({data: 'Operaciones Spot no permitidas'});
+  }
   const result = positionSell(payload.type, payload.market, payload.epic, payload.leverage, payload.size, payload.strategy);
   res.send({ data: result });
 });

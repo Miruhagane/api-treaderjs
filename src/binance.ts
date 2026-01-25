@@ -22,7 +22,7 @@ import { dashboard } from "./config/db/dashboard";
  */
 function redact(key?: string) {
     if (!key) return '<MISSING>';
-    return key.length > 8 ? `${key.slice(0,4)}...${key.slice(-4)}` : '<SET>';
+    return key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : '<SET>';
 }
 
 function safeLogError(label: string, err: any) {
@@ -94,18 +94,17 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
         try {
             if (market.toUpperCase() === 'SPOT') {
-                console.log(`Attempting SPOT BUY: epic=${epic}, quantity=${quantity}`);
+
                 // Sanity check
                 if (!apiKey || !apiSecret) {
                     throw new Error('Missing Binance_ApiKey or Binance_ApiSecret');
                 }
 
-                const order = await spot.newOrder(epic, 'BUY', 'MARKET', { quantity: quantity });
+                const order = await spot.newOrder(epic, 'BUY', 'MARKET', { quantity: 0.001 });
 
                 // seguridad: validar que fills exista antes de acceder
                 const fills = order?.data?.fills;
                 if (!fills || fills.length === 0) {
-                    console.warn('spot.newOrder returned no fills. Full order response:', util.inspect(order?.data ?? order, { depth: 4 }));
                     // decide cómo manejarlo: aquí retornamos un mensaje y guardamos registro parcial
                     const movementsPartial = new movementsModel({
                         idRefBroker: order?.data?.orderId ?? null,
