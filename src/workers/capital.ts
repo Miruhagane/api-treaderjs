@@ -31,10 +31,10 @@ function getDelayWithJitter(baseMs: number) {
 export const GLOBAL_DELAY_MS = 300; // ajusta según tus pruebas
 
 export async function startCapitalWorker(io: Server) {
-    console.log('Starting capital worker...');
+    // logging removed
     const channel = await getRabbitMQChannel();
     if (!channel) {
-        console.error('RabbitMQ channel is not available for worker');
+        // logging removed
         return;
     }
 
@@ -42,7 +42,7 @@ export async function startCapitalWorker(io: Server) {
     await channel.assertQueue(queue, { durable: true });
     channel.prefetch(1); // MUY IMPORTANTE: procesa 1 mensaje a la vez
 
-    console.log(`[*] Capital worker waiting for messages in ${queue}.`);
+    // logging removed
 
     channel.consume(queue, async (msg) => {
         if (!msg) return;
@@ -51,7 +51,7 @@ export async function startCapitalWorker(io: Server) {
         const task = JSON.parse(raw);
         const { epic } = task.payload;
 
-        console.log(`[x] Received task → ${task.description}`);
+        // logging removed
 
         try {
             await processWithEpicLock(epic, async () => {
@@ -89,14 +89,14 @@ export async function startCapitalWorker(io: Server) {
         } catch (err: any) {
 
             // Si el EPIC estaba bloqueado → reenviar después
-            if (err.message === "EPIC_LOCKED") {
-                console.warn(`[!] EPIC in use (${epic}). Requeueing...`);
+                if (err.message === "EPIC_LOCKED") {
+                // logging removed
                 channel.nack(msg, false, true); // requeue = true
                 return;
             }
 
             // Otros errores → log + requeue (o descartar según prefieras)
-            console.error("Error processing message:", err);
+            // logging removed
             channel.nack(msg, false, true);
         }
     });

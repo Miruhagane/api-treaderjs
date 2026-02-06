@@ -129,7 +129,7 @@ app.post('/simulador', async (req, res) => {
  */
 app.post('/capital_position', async (req, res) => {
   const payload = req.body;
-  console.log("payload capital_position ==>", payload)
+  // logging removed
   try {
 
     if (payload && Object.keys(payload).length > 0) {
@@ -141,7 +141,7 @@ app.post('/capital_position', async (req, res) => {
     }
 
   } catch (e) {
-    console.log(e);
+    // logging removed
     res.send('Error al realizar la posicion');
   }
 });
@@ -179,7 +179,7 @@ app.post('/capital_position', async (req, res) => {
 
 app.post('/capital_buyandsell', async (req, res) => {
   const payload = req.body;
-  console.log("payload capital_buyandsell ==>", payload)
+  // logging removed
   try {
     if (payload && Object.keys(payload).length > 0) {
       let result = await capitalbuyandsell(payload.epic, payload.size, payload.type, payload.strategy, io);
@@ -190,7 +190,7 @@ app.post('/capital_buyandsell', async (req, res) => {
     }
 
   } catch (e) {
-    console.log(e);
+    // logging removed
     res.send('Error al realizar la posicion');
   }
 });
@@ -218,7 +218,7 @@ app.post('/capital_buyandsell', async (req, res) => {
  */
 app.post('/binance/buy', (req, res) => {
   const payload = req.body;
-  console.log(payload)
+  // logging removed
   if(payload.market.toUpperCase() === 'SPOT')
   {
     return res.send({data: 'Operaciones Spot no permitidas'});
@@ -410,9 +410,9 @@ app.get('/ganancia_broker', async (req, res) => {
  * Emite eventos de 'dashboard_update' cuando hay cambios en las posiciones.
  */
 io.on('connection', (socket) => {
-  console.log('a user connected');
+  // logging removed
   socket.on('disconnect', () => {
-    console.log('user disconnected');
+    // logging removed
   });
 });
 
@@ -434,17 +434,17 @@ const startServer = async () => {
 
     // 4. Iniciar stream de posiciones de Binance Futures (WS)
     startBinanceFuturesPositionStream(io).catch((err) => {
-      console.error('Failed to start Binance Futures WS stream:', err);
+      // logging removed
     });
 
     // 5. Iniciar el servidor HTTP
     const port = parseInt(process.env.PORT || '3000');
     httpServer.listen(port, () => {
-      console.log(`listening on port ${port}`);
+      // logging removed
     });
 
   } catch (error) {
-    console.error("Failed to start the server:", error);
+    // logging removed
     process.exit(1);
   }
 };

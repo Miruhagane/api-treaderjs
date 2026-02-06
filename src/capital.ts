@@ -139,7 +139,7 @@ async function getAccountBalance(token: string, cst: string) {
   
     }
   
-  console.log(openPrice, sellPrice, g)
+  // logging removed
   
     return {
       sellprice: sellPrice,
@@ -173,7 +173,7 @@ async function getAccountBalance(token: string, cst: string) {
       }
     }
     catch (error: any) {
-      console.error("Error fetching single position:", error.message);
+      // logging removed
       return;
     }
   };
@@ -277,7 +277,7 @@ export const capitalbuyandsell = async (
  */
 export async function _executePosition(epic: string, size: number, type: string, strategy: string, io: Server) {
 
-  console.log(epic, size, type, strategy)
+  // logging removed
 
     // ... (la lógica de la antigua función positions está aquí)
     const sesiondata = await getSession();
@@ -310,7 +310,7 @@ export async function _executePosition(epic: string, size: number, type: string,
           io.emit('update', { message: 'Nueva posición abierta de ' + strategy + ' en Capital.com' });
           return "posicion abierta";
         } catch (error: any) {
-          console.error('❌ Error:', error);
+          // logging removed
           let mensaje = "error al realizar la compra en capital, estrategia:" + strategy
           await errorSendEmail(mensaje, error.response?.data || error.message)
           return "Error al realizar la compra";
@@ -350,7 +350,7 @@ export async function _executePosition(epic: string, size: number, type: string,
               await updateDbPositions(position._id.toString(), 0, 0, 0, closeprice, ganancia, strategy, false, type, 'capital');
               io.emit('update', { message: 'posición cerrada de ' + strategy + ' en Capital.com' });
             } catch (error: any) {
-              console.error(`❌ Error closing position ${position.idRefBroker}:`, error);
+              // logging removed
               let mensaje = "error al realizar el cierre en capital, estrategia:" + strategy
               // await errorSendEmail(mensaje, error.response?.data || error.message)
               return "Error al cerrar la posición";
@@ -394,7 +394,7 @@ async function _capitalPosition(epic: string, size: number, type: string, strate
       io.emit('update', { message: 'Nueva posición abierta de ' + strategy + ' en Capital.com' });
       return "posicion abierta";
     } catch (error: any) {
-      console.error('❌ Error:', error);
+      // logging removed
       let mensaje = "error al realizar la compra en capital, estrategia:" + strategy
       await errorSendEmail(mensaje, error.data)
       return "Error al realizar la compra";
@@ -405,7 +405,7 @@ async function _capitalPosition(epic: string, size: number, type: string, strate
  * @description (Lógica interna) Lógica de trading compleja.
  */
 export async function _capitalbuyandsell(epic: string, size: number, type: string, strategy: string, io: Server) {
-  console.log(epic, size, type, strategy)
+  // logging removed
 
     let m = await movementsModel.find({ strategy: strategy, open: true, broker: 'capital' }).sort({ myRegionalDate: -1 });
 
@@ -450,7 +450,7 @@ export async function _capitalbuyandsell(epic: string, size: number, type: strin
           await updateDbPositions(position._id.toString(), 0, 0, 0, closeprice, ganancia, strategy, false, type, 'capital');
           io.emit('update', { message: 'posición cerrada de ' + strategy + ' en Capital.com' });
         } catch (error: any) {
-          console.log("error capitalbuyandsell ==> ", error.data)
+          // logging removed
           let mensaje = "error al realizar el cierre en capital, estrategia:" + strategy
           // await errorSendEmail(mensaje, error.response?.data || error.message)
           return "Error al cerrar la posición";
@@ -484,7 +484,7 @@ export async function verifyAndClosePositions() {
 
 
       await updateDbPositions(position._id.toString(), 0, 0, 0, finalPosition.sellprice, finalPosition.ganancia, position.strategy, false, position.type, 'capital');
-      console.log(`Cerrada posición ${position.idRefBroker} en la base de datos porque no existe en Capital.com`);
+      // logging removed
     }
   }
 

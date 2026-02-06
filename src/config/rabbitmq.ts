@@ -10,7 +10,7 @@ export async function connectRabbitMQ() {
         connection = await amqp.connect(process.env.RABBITMQ_URL!);
         channel = await connection.createChannel();
 
-        console.log("RabbitMQ connected");
+        // logging removed
 
         // =============================
         //   CONFIGURAR DELAY EXCHANGE
@@ -26,9 +26,9 @@ export async function connectRabbitMQ() {
         // Enlazar exchange -> route -> cola
         await channel.bindQueue("capital_tasks", "delay-exchange", "capital_route");
 
-        console.log("Delay exchange + Queue configured");
+        // logging removed
     } catch (err) {
-        console.error("RabbitMQ error:", err);
+        // logging removed
     }
 }
 

@@ -28,32 +28,14 @@ function redact(key?: string) {
 
 function safeLogError(label: string, err: any) {
     try {
-        console.error(`${label} message:`, err?.message ?? err);
-        if (err?.stack) console.error(`${label} stack:`, err.stack);
-        if (err?.response) {
-            console.error(`${label} response status:`, err.response.status);
-            console.error(`${label} response data:`, util.inspect(err.response.data, { depth: 6 }));
-            console.error(`${label} response headers:`, util.inspect(err.response.headers, { depth: 2 }));
-        }
-        if (err?.config) {
-            console.error(`${label} request config:`, util.inspect({
-                method: err.config.method,
-                url: err.config.url,
-                headers: err.config.headers,
-                data: err.config.data
-            }, { depth: 4 }));
-        }
+        // logging removed
     } catch (loggingErr) {
-        console.error('Error while logging error:', loggingErr);
+        // logging removed
     }
 }
 
 function validateEnv() {
-    console.log('BINANCE config:');
-    console.log('  Binance_ApiKey:', redact(process.env.Binance_ApiKey));
-    console.log('  Binance_ApiSecret:', process.env.Binance_ApiSecret ? '<SET>' : '<MISSING>');
-    console.log('  targetBaseUrl:', targetBaseUrl);
-    console.log('Node version:', process.version);
+    // environment validation logs removed
 }
 
 /**
@@ -232,7 +214,7 @@ function connectFuturesUserDataWs(io: Server, listenKey: string) {
     futuresUserWs = new WebSocket(wsUrl);
 
     futuresUserWs.on('open', () => {
-        console.log('Binance Futures WS connected');
+        // connection opened (logging removed)
     });
 
     futuresUserWs.on('message', async (data) => {
@@ -249,7 +231,7 @@ function connectFuturesUserDataWs(io: Server, listenKey: string) {
     });
 
     futuresUserWs.on('close', () => {
-        console.warn('Binance Futures WS closed; scheduling reconnect');
+        // connection closed (logging removed)
         scheduleFuturesReconnect(io);
     });
 }
@@ -259,7 +241,7 @@ export const startBinanceFuturesPositionStream = async (io: Server, isReconnect 
     futuresStreamStarted = true;
 
     if (!apiKey) {
-        console.warn('Binance Futures WS not started: Missing Binance_ApiKey');
+        // missing API key (logging removed)
         return;
     }
 
@@ -356,9 +338,9 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
                 const order = await futures.submitNewOrder({ symbol: epic, side: 'BUY', type: 'MARKET', quantity: quantity });
 
-                console.log('Futures order response:', order);
+                // logging removed
                 const position = await futures.getOrder({ symbol: epic, orderId: order.orderId });
-                console.log('Futures position response:', position);
+                // logging removed
 
                 const movements = new movementsModel({
                     idRefBroker: position.orderId,
@@ -404,11 +386,11 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                 if (ordenes.length > 0) {
                     for (let orden of ordenes) {
 
-                        console.log(`Attempting SPOT SELL for epic=${orden.epic}, qty=${orden.size}`);
+                        // logging removed
                         const order = await spot.newOrder(orden.epic, 'SELL', 'MARKET', { quantity: orden.size });
                         const fills = order?.data?.fills;
                         if (!fills || fills.length === 0) {
-                            console.warn('spot.newOrder (SELL) returned no fills:', util.inspect(order?.data ?? order, { depth: 4 }));
+                            // logging removed
                             await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
                             continue;
                         }
@@ -428,13 +410,8 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                 if (ordenes.length > 0) {
                     for (let orden of ordenes) {
                         const order = await futures.submitNewOrder({ symbol: orden.epic, side: 'SELL', type: 'MARKET', quantity: orden.size });
-
-                        console.log('Futures SELL order response:', order);
                         const trades = await futures.getAccountTrades({ symbol: orden.epic });
-                        console.log('Futures trades response:', trades);
                         const cierre = trades.filter(t => String(t.orderId) === String(order.orderId));
-
-                        console.log('Filtered trades for orderId:', cierre);
 
                         const totalQty = cierre.reduce((acc, t) => acc + Number(t.qty), 0);
                         const totalQuote = cierre.reduce((acc, t) => acc + Number(t.quoteQty), 0);
@@ -466,12 +443,12 @@ export const positionSell = async (type: string, market: string, epic: string, l
 
         try {
             if (market.toUpperCase() === 'SPOT') {
-                console.log(`Attempting SPOT (positionSell) SELL: epic=${epic}, qty=${quantity}`);
+                // logging removed
                 const order = await spot.newOrder(epic, 'SELL', 'MARKET', { quantity: quantity });
 
                 const fills = order?.data?.fills;
                 if (!fills || fills.length === 0) {
-                    console.warn('spot.newOrder returned no fills (positionSell):', util.inspect(order?.data ?? order, { depth: 4 }));
+                    // logging removed
                 } else {
                     const fill = fills[0];
 
@@ -549,11 +526,11 @@ export const positionSell = async (type: string, market: string, epic: string, l
                 if (ordenes.length > 0) {
                     for (let orden of ordenes) {
 
-                        console.log(`Attempting SPOT (positionSell) BUY for epic=${orden.epic}, qty=${orden.size}`);
+                        // logging removed
                         const order = await spot.newOrder(orden.epic, 'BUY', 'MARKET', { quantity: orden.size });
                         const fills = order?.data?.fills;
                         if (!fills || fills.length === 0) {
-                            console.warn('spot.newOrder (BUY close) returned no fills:', util.inspect(order?.data ?? order, { depth: 4 }));
+                            // logging removed
                             await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
                             continue;
                         }
