@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import { Spot } from '@binance/connector';
 import { USDMClient } from "binance";
 import util from 'util';
+import WebSocket from 'ws';
 
 dotenv.config();
 
@@ -74,6 +75,9 @@ interface Balances {
 const apiKey = process.env.Binance_ApiKey;
 const apiSecret = process.env.Binance_ApiSecret;
 const targetBaseUrl = process.env.BINANCE_BASEURL || 'https://testnet.binance.vision';
+const isFuturesTestnet = process.env.BINANCE_TESTNET ? process.env.BINANCE_TESTNET === 'true' : true;
+const futuresRestBaseUrl = process.env.BINANCE_FUTURES_BASEURL || (isFuturesTestnet ? 'https://testnet.binancefuture.com' : 'https://fapi.binance.com');
+const futuresWsBaseUrl = process.env.BINANCE_FUTURES_WS_URL || (isFuturesTestnet ? 'wss://stream.binancefuture.com/ws' : 'wss://fstream.binance.com/ws');
 
 validateEnv();
 
@@ -84,6 +88,204 @@ const futures = new USDMClient({
     api_secret: process.env.Binance_ApiSecret,
     testnet: true,
 });
+
+/**
+ * Binance Futures User Data Stream (WebSocket)
+ * Emite cambios de posición en tiempo real para posiciones abiertas.
+ */
+let futuresUserWs: WebSocket | null = null;
+let futuresListenKeyKeepAliveTimer: NodeJS.Timeout | null = null;
+let futuresReconnectTimer: NodeJS.Timeout | null = null;
+let futuresStreamStarted = false;
+const openPositionsCache = new Map<string, number>();
+
+async function refreshOpenPositionsCache() {
+    const openPositions = await movementsModel.find(
+        { broker: 'binance', market: 'FUTURE', open: true },
+        { epic: 1 }
+    );
+    openPositionsCache.clear();
+    for (const pos of openPositions) {
+        const symbol = String(pos.epic || '').toUpperCase();
+        if (!symbol) continue;
+        openPositionsCache.set(symbol, (openPositionsCache.get(symbol) || 0) + 1);
+    }
+}
+
+async function getFuturesListenKey() {
+    if (!apiKey) {
+        throw new Error('Missing Binance_ApiKey for Futures listenKey');
+    }
+    const config: AxiosRequestConfig = {
+        method: 'POST',
+        url: `${futuresRestBaseUrl}/fapi/v1/listenKey`,
+        headers: { 'X-MBX-APIKEY': apiKey }
+    };
+    const response = await axios(config);
+    const listenKey = response?.data?.listenKey;
+    if (!listenKey) {
+        throw new Error('Failed to acquire Futures listenKey');
+    }
+    return listenKey;
+}
+
+async function keepAliveFuturesListenKey(listenKey: string) {
+    if (!apiKey) return;
+    try {
+        const config: AxiosRequestConfig = {
+            method: 'PUT',
+            url: `${futuresRestBaseUrl}/fapi/v1/listenKey`,
+            headers: { 'X-MBX-APIKEY': apiKey },
+            params: { listenKey }
+        };
+        await axios(config);
+    } catch (err) {
+        safeLogError('Futures listenKey keepAlive ERROR', err);
+    }
+}
+
+function scheduleFuturesReconnect(io: Server) {
+    if (futuresReconnectTimer) return;
+    futuresReconnectTimer = setTimeout(async () => {
+        futuresReconnectTimer = null;
+        try {
+            await startBinanceFuturesPositionStream(io, true);
+        } catch (err) {
+            safeLogError('Futures WS reconnect ERROR', err);
+            scheduleFuturesReconnect(io);
+        }
+    }, 5000);
+}
+
+async function handleFuturesUserDataMessage(io: Server, message: any) {
+    const eventType = message?.e;
+
+    if (eventType === 'ACCOUNT_UPDATE' && message?.a?.P) {
+        const balanceByAsset = new Map<string, any>();
+        const balances = Array.isArray(message?.a?.B) ? message.a.B : [];
+        for (const bal of balances) {
+            const asset = String(bal?.a || '').toUpperCase();
+            if (!asset) continue;
+            balanceByAsset.set(asset, bal);
+        }
+
+        for (const position of message.a.P) {
+            const symbol = String(position?.s || '').toUpperCase();
+            if (!symbol) continue;
+
+            if (!openPositionsCache.has(symbol)) {
+                continue;
+            }
+
+            const marginAsset = String(position?.ma || '').toUpperCase();
+            const balance = marginAsset ? balanceByAsset.get(marginAsset) : null;
+            const positionAmt = Number(position?.pa || 0);
+            const entryPrice = Number(position?.ep || 0);
+            const unrealizedPnl = Number(position?.up || 0);
+            const leverage = Number(position?.l || 0);
+
+            io.emit('binance_position_update', {
+                broker: 'binance',
+                market: 'FUTURE',
+                eventType,
+                eventTime: message?.E,
+                symbol,
+                marginAsset,
+                crossWalletBalance: balance?.cw ? Number(balance.cw) : null,
+                walletBalance: balance?.wb ? Number(balance.wb) : null,
+                positionAmt,
+                entryPrice,
+                unrealizedPnl,
+                leverage,
+                raw: message
+            });
+
+            if (positionAmt === 0) {
+                await movementsModel.updateMany(
+                    { broker: 'binance', market: 'FUTURE', open: true, epic: symbol },
+                    { $set: { open: false } }
+                );
+                openPositionsCache.delete(symbol);
+            }
+        }
+        return;
+    }
+
+    if (eventType === 'ORDER_TRADE_UPDATE' && message?.o) {
+        const symbol = String(message.o?.s || '').toUpperCase();
+        if (symbol && openPositionsCache.has(symbol)) {
+            io.emit('binance_position_update', {
+                broker: 'binance',
+                market: 'FUTURE',
+                eventType,
+                eventTime: message?.E,
+                symbol,
+                order: message.o,
+                raw: message
+            });
+        }
+    }
+}
+
+function connectFuturesUserDataWs(io: Server, listenKey: string) {
+    const wsUrl = `${futuresWsBaseUrl}/${listenKey}`;
+    futuresUserWs = new WebSocket(wsUrl);
+
+    futuresUserWs.on('open', () => {
+        console.log('Binance Futures WS connected');
+    });
+
+    futuresUserWs.on('message', async (data) => {
+        try {
+            const parsed = JSON.parse(data.toString());
+            await handleFuturesUserDataMessage(io, parsed);
+        } catch (err) {
+            safeLogError('Futures WS message ERROR', err);
+        }
+    });
+
+    futuresUserWs.on('error', (err) => {
+        safeLogError('Futures WS ERROR', err);
+    });
+
+    futuresUserWs.on('close', () => {
+        console.warn('Binance Futures WS closed; scheduling reconnect');
+        scheduleFuturesReconnect(io);
+    });
+}
+
+export const startBinanceFuturesPositionStream = async (io: Server, isReconnect = false) => {
+    if (futuresStreamStarted && !isReconnect) return;
+    futuresStreamStarted = true;
+
+    if (!apiKey) {
+        console.warn('Binance Futures WS not started: Missing Binance_ApiKey');
+        return;
+    }
+
+    await refreshOpenPositionsCache();
+
+    const listenKey = await getFuturesListenKey();
+
+    if (futuresUserWs) {
+        try {
+            futuresUserWs.close();
+        } catch (err) {
+            safeLogError('Futures WS close ERROR', err);
+        }
+        futuresUserWs = null;
+    }
+
+    if (futuresListenKeyKeepAliveTimer) {
+        clearInterval(futuresListenKeyKeepAliveTimer);
+    }
+
+    futuresListenKeyKeepAliveTimer = setInterval(() => {
+        keepAliveFuturesListenKey(listenKey);
+    }, 30 * 60 * 1000);
+
+    connectFuturesUserDataWs(io, listenKey);
+};
 
 /**
  * positionBuy
@@ -154,7 +356,9 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
                 const order = await futures.submitNewOrder({ symbol: epic, side: 'BUY', type: 'MARKET', quantity: quantity });
 
+                console.log('Futures order response:', order);
                 const position = await futures.getOrder({ symbol: epic, orderId: order.orderId });
+                console.log('Futures position response:', position);
 
                 const movements = new movementsModel({
                     idRefBroker: position.orderId,
@@ -182,7 +386,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
         }
         catch (error: any) {
-            safeLogError('spot.newOrder ERROR', error);
+            safeLogError('future.newOrder ERROR', error);
             throw error; // o return un mensaje controlado
         }
 
@@ -225,9 +429,12 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     for (let orden of ordenes) {
                         const order = await futures.submitNewOrder({ symbol: orden.epic, side: 'SELL', type: 'MARKET', quantity: orden.size });
 
+                        console.log('Futures SELL order response:', order);
                         const trades = await futures.getAccountTrades({ symbol: orden.epic });
+                        console.log('Futures trades response:', trades);
+                        const cierre = trades.filter(t => String(t.orderId) === String(order.orderId));
 
-                        const cierre = trades.filter(t => t.orderId === order.orderId);
+                        console.log('Filtered trades for orderId:', cierre);
 
                         const totalQty = cierre.reduce((acc, t) => acc + Number(t.qty), 0);
                         const totalQuote = cierre.reduce((acc, t) => acc + Number(t.quoteQty), 0);
@@ -244,7 +451,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
             return " Orden de venta ejecutada y registros actualizados."
         } catch (error) {
-            safeLogError('positionBuy SELL ERROR', error);
+            safeLogError('positionbuy SELL ERROR', error);
             return "Error en la ejecución de la orden.";
         }
 

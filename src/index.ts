@@ -16,7 +16,7 @@ import swaggerSpec from './config/swagger';
 
 // Importa las funciones de los módulos de broker
 import { positions, accountBalance, capitalbuyandsell, getprices} from './capital';
-import { positionBuy, positionSell } from './binance';
+import { positionBuy, positionSell, startBinanceFuturesPositionStream } from './binance';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv } from './config/db/dashboard';
 import { startCapitalWorker } from './workers/capital';
 
@@ -432,7 +432,12 @@ const startServer = async () => {
     // 3. Iniciar los workers que dependen de RabbitMQ
     startCapitalWorker(io);
 
-    // 4. Iniciar el servidor HTTP
+    // 4. Iniciar stream de posiciones de Binance Futures (WS)
+    startBinanceFuturesPositionStream(io).catch((err) => {
+      console.error('Failed to start Binance Futures WS stream:', err);
+    });
+
+    // 5. Iniciar el servidor HTTP
     const port = parseInt(process.env.PORT || '3000');
     httpServer.listen(port, () => {
       console.log(`listening on port ${port}`);
