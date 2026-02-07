@@ -128,6 +128,8 @@ app.post('/simulador', async (req, res) => {
  *         description: Error al realizar la posición.
  */
 app.post('/capital_position', async (req, res) => {
+
+  return res.send({data: 'Endpoint en mantenimiento'});
   const payload = req.body;
   // logging removed
   try {
@@ -178,6 +180,7 @@ app.post('/capital_position', async (req, res) => {
 
 
 app.post('/capital_buyandsell', async (req, res) => {
+  return res.send({data: 'Endpoint en mantenimiento'});
   const payload = req.body;
   // logging removed
   try {
