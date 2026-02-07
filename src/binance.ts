@@ -315,7 +315,9 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                         date: new Date(),
                         myRegionalDate: new Date().setHours(new Date().getHours() - 5)
                     });
-                    await movementsPartial.save();
+                    let movement = await movementsPartial.save();
+
+                    console.log('Saved partial movement due to no fills:', movement);
                     return 'Orden ejecutada pero no se recibieron fills; revisa logs.';
                 }
 
