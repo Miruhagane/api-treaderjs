@@ -229,8 +229,6 @@ app.post('/binance/buy', (req, res) => {
   queue.add(async () => {
 
     try {
-      console.log('Ejecutando operación de compra en Binance...');
-      console.log('Payload recibido:', req.body);
       const result = await positionBuy(req.body.type, req.body.market, req.body.epic, req.body.leverage, req.body.size, req.body.strategy);
       res.status(200).send(result);
 
