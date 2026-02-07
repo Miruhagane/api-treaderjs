@@ -274,6 +274,7 @@ export const startBinanceFuturesPositionStream = async (io: Server, isReconnect 
  */
 export const positionBuy = async (type: string, market: string, epic: string, leverage: number, quantity: number, strategy: string) => {
 
+    console.log('positionBuy called with:', { type, market, epic, leverage, quantity, strategy });
     if (type.toUpperCase() === 'BUY') {
 
         try {
@@ -413,13 +414,13 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                         const fills = order?.data?.fills;
                         if (!fills || fills.length === 0) {
                             try {
-                                    safeLogError('positionBuy SPOT SELL no fills', { order: order?.data, ordenId: orden._id, epic: orden.epic });
-                                    await errorSendEmail('positionBuy SPOT SELL no fills', JSON.stringify({ order: order?.data, ordenId: orden._id, epic: orden.epic }, null, 2));
-                                } catch (e) {
-                                    // ignore logging/email errors
-                                }
+                                safeLogError('positionBuy SPOT SELL no fills', { order: order?.data, ordenId: orden._id, epic: orden.epic });
+                                await errorSendEmail('positionBuy SPOT SELL no fills', JSON.stringify({ order: order?.data, ordenId: orden._id, epic: orden.epic }, null, 2));
+                            } catch (e) {
+                                // ignore logging/email errors
+                            }
 
-                                await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
+                            await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
                             continue;
                         }
                         const fill = fills[0];
