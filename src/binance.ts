@@ -274,7 +274,6 @@ export const startBinanceFuturesPositionStream = async (io: Server, isReconnect 
  */
 export const positionBuy = async (type: string, market: string, epic: string, leverage: number, quantity: number, strategy: string) => {
 
-    console.log('positionBuy called with:', { type, market, epic, leverage, quantity, strategy });
     if (type.toUpperCase() === 'BUY') {
 
         try {
@@ -348,9 +347,11 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                 await futures.setLeverage({ symbol: epic, leverage: leverage });
 
                 const order = await futures.submitNewOrder({ symbol: epic, side: 'BUY', type: 'MARKET', quantity: quantity });
+                console.log('FUTURE order response:', util.inspect(order, { depth: null }));
 
                 // logging removed
                 const position = await futures.getOrder({ symbol: epic, orderId: order.orderId });
+                console.log('FUTURE position response:', util.inspect(position, { depth: null }));
                 // logging removed
 
                 if (!position || !position.orderId) {
@@ -362,7 +363,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     }
                 }
 
-                const movements = new movementsModel({
+                const movements = await new movementsModel({
                     idRefBroker: position?.orderId ?? order.orderId,
                     strategy: strategy,
                     market: market.toUpperCase(),
