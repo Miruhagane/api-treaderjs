@@ -289,6 +289,14 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                 // seguridad: validar que fills exista antes de acceder
                 const fills = order?.data?.fills;
                 if (!fills || fills.length === 0) {
+                    // Log del error para facilitar debugging y notificar por email
+                    try {
+                        safeLogError('positionBuy SPOT no fills', { order: order?.data, epic, quantity, strategy, market, type });
+                        await errorSendEmail('positionBuy SPOT no fills', JSON.stringify({ order: order?.data, epic, quantity, strategy, market, type }, null, 2));
+                    } catch (e) {
+                        // ignore logging/email errors
+                    }
+
                     // decide cómo manejarlo: aquí retornamos un mensaje y guardamos registro parcial
                     const movementsPartial = new movementsModel({
                         idRefBroker: order?.data?.orderId ?? null,
@@ -342,8 +350,17 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                 const position = await futures.getOrder({ symbol: epic, orderId: order.orderId });
                 // logging removed
 
+                if (!position || !position.orderId) {
+                    try {
+                        safeLogError('positionBuy FUTURE missing position', { order, position, epic, quantity, strategy });
+                        await errorSendEmail('positionBuy FUTURE missing position', JSON.stringify({ order, position, epic, quantity, strategy }, null, 2));
+                    } catch (e) {
+                        // ignore logging/email errors
+                    }
+                }
+
                 const movements = new movementsModel({
-                    idRefBroker: position.orderId,
+                    idRefBroker: position?.orderId ?? order.orderId,
                     strategy: strategy,
                     market: market.toUpperCase(),
                     type: type,
@@ -351,7 +368,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     size: quantity,
                     epic: epic,
                     open: true,
-                    buyPrice: position.cumQuote,
+                    buyPrice: position?.cumQuote ?? 0,
                     sellPrice: 0,
                     ganancia: 0,
                     broker: 'binance',
@@ -368,7 +385,12 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
         }
         catch (error: any) {
-            safeLogError('future.newOrder ERROR', error);
+            try {
+                safeLogError('future.newOrder ERROR', error);
+                await errorSendEmail('future.newOrder ERROR', JSON.stringify({ message: error?.message, stack: error?.stack }, null, 2));
+            } catch (e) {
+                // ignore logging/email errors
+            }
             throw error; // o return un mensaje controlado
         }
 
@@ -390,8 +412,14 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                         const order = await spot.newOrder(orden.epic, 'SELL', 'MARKET', { quantity: orden.size });
                         const fills = order?.data?.fills;
                         if (!fills || fills.length === 0) {
-                            // logging removed
-                            await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
+                            try {
+                                    safeLogError('positionBuy SPOT SELL no fills', { order: order?.data, ordenId: orden._id, epic: orden.epic });
+                                    await errorSendEmail('positionBuy SPOT SELL no fills', JSON.stringify({ order: order?.data, ordenId: orden._id, epic: orden.epic }, null, 2));
+                                } catch (e) {
+                                    // ignore logging/email errors
+                                }
+
+                                await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
                             continue;
                         }
                         const fill = fills[0];
@@ -413,9 +441,21 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                         const trades = await futures.getAccountTrades({ symbol: orden.epic });
                         const cierre = trades.filter(t => String(t.orderId) === String(order.orderId));
 
+                        if (!cierre || cierre.length === 0) {
+                            try {
+                                safeLogError('positionBuy FUTURE SELL no trades for order', { order, trades, ordenId: orden._id, epic: orden.epic });
+                                await errorSendEmail('positionBuy FUTURE SELL no trades for order', JSON.stringify({ order, trades, ordenId: orden._id, epic: orden.epic }, null, 2));
+                            } catch (e) {
+                                // ignore logging/email errors
+                            }
+
+                            await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
+                            continue;
+                        }
+
                         const totalQty = cierre.reduce((acc, t) => acc + Number(t.qty), 0);
                         const totalQuote = cierre.reduce((acc, t) => acc + Number(t.quoteQty), 0);
-                        const avgPrice = totalQuote / totalQty;
+                        const avgPrice = totalQty === 0 ? 0 : totalQuote / totalQty;
                         const totalPnl = cierre.reduce((acc, t) => acc + Number(t.realizedPnl), 0);
                         await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: avgPrice, ganancia: totalPnl } });
                     }
@@ -428,7 +468,12 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
             return " Orden de venta ejecutada y registros actualizados."
         } catch (error) {
-            safeLogError('positionbuy SELL ERROR', error);
+            try {
+                safeLogError('positionbuy SELL ERROR', error);
+                await errorSendEmail('positionbuy SELL ERROR', JSON.stringify({ message: error?.message, stack: error?.stack }, null, 2));
+            } catch (e) {
+                // ignore logging/email errors
+            }
             return "Error en la ejecución de la orden.";
         }
 
@@ -448,7 +493,12 @@ export const positionSell = async (type: string, market: string, epic: string, l
 
                 const fills = order?.data?.fills;
                 if (!fills || fills.length === 0) {
-                    // logging removed
+                    try {
+                        safeLogError('positionSell SPOT no fills', { order: order?.data, epic, quantity, strategy, market, type });
+                        await errorSendEmail('positionSell SPOT no fills', JSON.stringify({ order: order?.data, epic, quantity, strategy, market, type }, null, 2));
+                    } catch (e) {
+                        // ignore logging/email errors
+                    }
                 } else {
                     const fill = fills[0];
 
@@ -482,8 +532,17 @@ export const positionSell = async (type: string, market: string, epic: string, l
 
                 const position = await futures.getOrder({ symbol: epic, orderId: order.orderId });
 
+                if (!position || !position.orderId) {
+                    try {
+                        safeLogError('positionSell FUTURE missing position', { order, position, epic, quantity, strategy });
+                        await errorSendEmail('positionSell FUTURE missing position', JSON.stringify({ order, position, epic, quantity, strategy }, null, 2));
+                    } catch (e) {
+                        // ignore logging/email errors
+                    }
+                }
+
                 const movements = new movementsModel({
-                    idRefBroker: position.orderId,
+                    idRefBroker: position?.orderId ?? order.orderId,
                     strategy: strategy,
                     market: market.toUpperCase(),
                     type: type,
@@ -491,7 +550,7 @@ export const positionSell = async (type: string, market: string, epic: string, l
                     size: quantity,
                     epic: epic,
                     open: true,
-                    buyPrice: position.cumQuote,
+                    buyPrice: position?.cumQuote ?? 0,
                     sellPrice: 0,
                     ganancia: 0,
                     broker: 'binance',
@@ -508,7 +567,12 @@ export const positionSell = async (type: string, market: string, epic: string, l
 
         }
         catch (error) {
-            safeLogError('positionSell SELL ERROR', error);
+            try {
+                safeLogError('positionSell SELL ERROR', error);
+                await errorSendEmail('positionSell SELL ERROR', JSON.stringify({ message: error?.message, stack: error?.stack }, null, 2));
+            } catch (e) {
+                // ignore logging/email errors
+            }
             return "Error en la ejecución de la orden.";
         }
 
@@ -554,9 +618,21 @@ export const positionSell = async (type: string, market: string, epic: string, l
 
                         const cierre = trades.filter(t => t.orderId === order.orderId);
 
+                        if (!cierre || cierre.length === 0) {
+                            try {
+                                safeLogError('positionSell FUTURE BUY no trades for order', { order, trades, ordenId: orden._id, epic: orden.epic });
+                                await errorSendEmail('positionSell FUTURE BUY no trades for order', JSON.stringify({ order, trades, ordenId: orden._id, epic: orden.epic }, null, 2));
+                            } catch (e) {
+                                // ignore logging/email errors
+                            }
+
+                            await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
+                            continue;
+                        }
+
                         const totalQty = cierre.reduce((acc, t) => acc + Number(t.qty), 0);
                         const totalQuote = cierre.reduce((acc, t) => acc + Number(t.quoteQty), 0);
-                        const avgPrice = totalQuote / totalQty;
+                        const avgPrice = totalQty === 0 ? 0 : totalQuote / totalQty;
                         const totalPnl = cierre.reduce((acc, t) => acc + Number(t.realizedPnl), 0);
                         await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: avgPrice, ganancia: totalPnl } });
                     }
