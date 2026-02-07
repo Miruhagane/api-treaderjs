@@ -340,7 +340,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     myRegionalDate: new Date().setHours(new Date().getHours() - 5)
                 })
 
-                await movements.save();
+                let movement = await movements.save();
 
             }
             else if (market.toUpperCase() === 'FUTURE') {
@@ -378,7 +378,8 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     date: new Date(),
                     myRegionalDate: new Date().setHours(new Date().getHours() - 5)
                 })
-                await movements.save();
+                let movement = await movements.save();
+                console.log('FUTURE movement saved:', movement);
             }
             else {
                 return "Tipo de mercado no soportado.";
