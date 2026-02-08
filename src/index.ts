@@ -5,6 +5,7 @@
 
 import express from 'express';
 import bodyParser from 'body-parser';
+import PQueue from 'p-queue';
 import { Parser } from 'json2csv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -15,7 +16,7 @@ import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
 
 // Importa las funciones de los módulos de broker
-import { positions, accountBalance, capitalbuyandsell, getprices} from './capital';
+import { positions, accountBalance, capitalbuyandsell, getprices } from './capital';
 import { positionBuy, positionSell, startBinanceFuturesPositionStream } from './binance';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv } from './config/db/dashboard';
 import { startCapitalWorker } from './workers/capital';
@@ -30,8 +31,7 @@ const io = new Server(httpServer, {
   }
 });
 
-
-
+const queue = new PQueue({ concurrency: 1 });
 
 
 // Middleware para parsear el cuerpo de las solicitudes JSON
@@ -129,7 +129,7 @@ app.post('/simulador', async (req, res) => {
  */
 app.post('/capital_position', async (req, res) => {
 
-  return res.send({data: 'Endpoint en mantenimiento'});
+  return res.send({ data: 'Endpoint en mantenimiento' });
   const payload = req.body;
   // logging removed
   try {
@@ -180,7 +180,7 @@ app.post('/capital_position', async (req, res) => {
 
 
 app.post('/capital_buyandsell', async (req, res) => {
-  return res.send({data: 'Endpoint en mantenimiento'});
+  return res.send({ data: 'Endpoint en mantenimiento' });
   const payload = req.body;
   // logging removed
   try {
@@ -221,23 +221,46 @@ app.post('/capital_buyandsell', async (req, res) => {
  */
 app.post('/binance/buy', (req, res) => {
   const payload = req.body;
-  // logging removed
-  if(payload.market.toUpperCase() === 'SPOT')
-  {
-    return res.send({data: 'Operaciones Spot no permitidas'});
+
+  if (payload.market.toUpperCase() === 'SPOT') {
+    return res.send({ data: 'Operaciones Spot no permitidas' });
   }
-  const result = positionBuy(payload.type, payload.market, payload.epic, payload.leverage, payload.size, payload.strategy);
-  res.send({ data: result });
+
+  queue.add(async () => {
+
+    try {
+      const result = await positionBuy(req.body.type, req.body.market, req.body.epic, req.body.leverage, req.body.size, req.body.strategy);
+      res.status(200).send(result);
+
+    } catch (error) {
+      console.error('Error en operación de compra en Binance:', error);
+      res.status(500).send('Error al realizar la operación de compra en Binance');
+    }
+  });
+
 });
 
 app.post('/binance/sell', (req, res) => {
+
   const payload = req.body;
-    if(payload.market.toUpperCase() === 'SPOT')
-  {
-    return res.send({data: 'Operaciones Spot no permitidas'});
+  if (payload.market.toUpperCase() === 'SPOT') {
+    return res.send({ data: 'Operaciones Spot no permitidas' });
   }
-  const result = positionSell(payload.type, payload.market, payload.epic, payload.leverage, payload.size, payload.strategy);
-  res.send({ data: result });
+
+  queue.add(async () => {
+
+    try {
+      console.log('Ejecutando operación de venta en Binance...');
+      console.log('Payload recibido:', req.body);
+      const result = await positionSell(req.body.type, req.body.market, req.body.epic, req.body.leverage, req.body.size, req.body.strategy);
+      res.status(200).send(result);
+    }
+    catch (error) {
+      console.error('Error en operación de venta en Binance:', error);
+      res.status(500).send('Error al realizar la operación de venta en Binance');
+    }
+  });
+
 });
 
 /**

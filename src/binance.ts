@@ -314,7 +314,9 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                         date: new Date(),
                         myRegionalDate: new Date().setHours(new Date().getHours() - 5)
                     });
-                    await movementsPartial.save();
+                    let movement = await movementsPartial.save();
+
+                    console.log('Saved partial movement due to no fills:', movement);
                     return 'Orden ejecutada pero no se recibieron fills; revisa logs.';
                 }
 
@@ -337,7 +339,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     myRegionalDate: new Date().setHours(new Date().getHours() - 5)
                 })
 
-                await movements.save();
+                let movement = await movements.save();
 
             }
             else if (market.toUpperCase() === 'FUTURE') {
@@ -345,11 +347,56 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                 await futures.setLeverage({ symbol: epic, leverage: leverage });
 
                 const order = await futures.submitNewOrder({ symbol: epic, side: 'BUY', type: 'MARKET', quantity: quantity });
+                console.log('FUTURE order response:', util.inspect(order, { depth: null }));
+
+                // intentamos obtener orderId de distintas formas (diferentes formas de respuesta según SDK/entorno)
+                const orderAny: any = order;
+                const orderId = orderAny?.orderId ?? orderAny?.orderIdStr ?? orderAny?.data?.orderId ?? null;
 
                 // logging removed
-                const position = await futures.getOrder({ symbol: epic, orderId: order.orderId });
-                // logging removed
+                let position: any = null;
+                if (orderId) {
+                    try {
+                        position = await futures.getOrder({ symbol: epic, orderId: orderId });
+                    } catch (err: any) {
+                        // Manejo específico cuando Binance responde que la orden no existe
+                        const msg = String(err?.message || err?.msg || '');
+                        safeLogError('futures.getOrder ERROR', { err, epic, orderId });
+                        if (msg.includes('Order does not exist') || msg.includes('order does not exist')) {
+                            try {
+                                // Intentamos reconstruir la información a partir de trades de la cuenta
+                                const trades = await futures.getAccountTrades({ symbol: epic });
+                                const cierre = trades.filter((t: any) => String(t.orderId) === String(orderId));
+                                if (cierre && cierre.length > 0) {
+                                    const totalQty = cierre.reduce((acc: number, t: any) => acc + Number(t.qty || 0), 0);
+                                    const totalQuote = cierre.reduce((acc: number, t: any) => acc + Number(t.quoteQty || t.quote || 0), 0);
+                                    position = { orderId, cumQuote: totalQuote, executedQty: totalQty };
+                                } else {
+                                    // fallback: usar posibles campos del response `order` si existen
+                                    position = { orderId, cumQuote: order?.cumQuote ?? order?.executedQty ?? 0 };
+                                }
+                            } catch (e) {
+                                safeLogError('rebuild position from trades ERROR', e);
+                                position = { orderId, cumQuote: order?.cumQuote ?? 0 };
+                            }
+                        } else {
+                            throw err;
+                        }
+                    }
+                } else {
+                    safeLogError('submitNewOrder returned no orderId', { order, epic, quantity, strategy });
+                    // Intentamos obtener trades recientes como fallback
+                    try {
+                        const trades = await futures.getAccountTrades({ symbol: epic });
+                        const recent = trades.slice(-5);
+                        const totalQuote = recent.reduce((acc: number, t: any) => acc + Number(t.quoteQty || t.quote || 0), 0);
+                        position = { orderId: null, cumQuote: totalQuote };
+                    } catch (e) {
+                        position = { orderId: null, cumQuote: 0 };
+                    }
+                }
 
+                // logging removed
                 if (!position || !position.orderId) {
                     try {
                         safeLogError('positionBuy FUTURE missing position', { order, position, epic, quantity, strategy });
@@ -359,8 +406,8 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     }
                 }
 
-                const movements = new movementsModel({
-                    idRefBroker: position?.orderId ?? order.orderId,
+                const movements = await new movementsModel({
+                    idRefBroker: position?.orderId ?? orderId ?? order?.orderId ?? null,
                     strategy: strategy,
                     market: market.toUpperCase(),
                     type: type,
@@ -368,14 +415,15 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     size: quantity,
                     epic: epic,
                     open: true,
-                    buyPrice: position?.cumQuote ?? 0,
+                    buyPrice: position?.cumQuote ?? order?.cumQuote ?? 0,
                     sellPrice: 0,
                     ganancia: 0,
                     broker: 'binance',
                     date: new Date(),
                     myRegionalDate: new Date().setHours(new Date().getHours() - 5)
                 })
-                await movements.save();
+                let movement = await movements.save();
+                console.log('FUTURE movement saved:', movement);
             }
             else {
                 return "Tipo de mercado no soportado.";
@@ -413,13 +461,13 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                         const fills = order?.data?.fills;
                         if (!fills || fills.length === 0) {
                             try {
-                                    safeLogError('positionBuy SPOT SELL no fills', { order: order?.data, ordenId: orden._id, epic: orden.epic });
-                                    await errorSendEmail('positionBuy SPOT SELL no fills', JSON.stringify({ order: order?.data, ordenId: orden._id, epic: orden.epic }, null, 2));
-                                } catch (e) {
-                                    // ignore logging/email errors
-                                }
+                                safeLogError('positionBuy SPOT SELL no fills', { order: order?.data, ordenId: orden._id, epic: orden.epic });
+                                await errorSendEmail('positionBuy SPOT SELL no fills', JSON.stringify({ order: order?.data, ordenId: orden._id, epic: orden.epic }, null, 2));
+                            } catch (e) {
+                                // ignore logging/email errors
+                            }
 
-                                await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
+                            await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
                             continue;
                         }
                         const fill = fills[0];
@@ -530,7 +578,46 @@ export const positionSell = async (type: string, market: string, epic: string, l
 
                 const order = await futures.submitNewOrder({ symbol: epic, side: 'SELL', type: 'MARKET', quantity: quantity });
 
-                const position = await futures.getOrder({ symbol: epic, orderId: order.orderId });
+                // intentamos obtener orderId de distintas formas
+                const orderAny: any = order;
+                const orderId = orderAny?.orderId ?? orderAny?.orderIdStr ?? orderAny?.data?.orderId ?? null;
+                let position: any = null;
+                if (orderId) {
+                    try {
+                        position = await futures.getOrder({ symbol: epic, orderId: orderId });
+                    } catch (err: any) {
+                        const msg = String(err?.message || err?.msg || '');
+                        safeLogError('futures.getOrder ERROR', { err, epic, orderId });
+                        if (msg.includes('Order does not exist') || msg.includes('order does not exist')) {
+                            try {
+                                const trades = await futures.getAccountTrades({ symbol: epic });
+                                const cierre = trades.filter((t: any) => String(t.orderId) === String(orderId));
+                                if (cierre && cierre.length > 0) {
+                                    const totalQty = cierre.reduce((acc: number, t: any) => acc + Number(t.qty || 0), 0);
+                                    const totalQuote = cierre.reduce((acc: number, t: any) => acc + Number(t.quoteQty || t.quote || 0), 0);
+                                    position = { orderId, cumQuote: totalQuote, executedQty: totalQty };
+                                } else {
+                                    position = { orderId, cumQuote: order?.cumQuote ?? order?.executedQty ?? 0 };
+                                }
+                            } catch (e) {
+                                safeLogError('rebuild position from trades ERROR', e);
+                                position = { orderId, cumQuote: order?.cumQuote ?? 0 };
+                            }
+                        } else {
+                            throw err;
+                        }
+                    }
+                } else {
+                    safeLogError('submitNewOrder returned no orderId', { order, epic, quantity, strategy });
+                    try {
+                        const trades = await futures.getAccountTrades({ symbol: epic });
+                        const recent = trades.slice(-5);
+                        const totalQuote = recent.reduce((acc: number, t: any) => acc + Number(t.quoteQty || t.quote || 0), 0);
+                        position = { orderId: null, cumQuote: totalQuote };
+                    } catch (e) {
+                        position = { orderId: null, cumQuote: 0 };
+                    }
+                }
 
                 if (!position || !position.orderId) {
                     try {
@@ -540,9 +627,8 @@ export const positionSell = async (type: string, market: string, epic: string, l
                         // ignore logging/email errors
                     }
                 }
-
                 const movements = new movementsModel({
-                    idRefBroker: position?.orderId ?? order.orderId,
+                    idRefBroker: position?.orderId ?? orderId ?? order?.orderId ?? null,
                     strategy: strategy,
                     market: market.toUpperCase(),
                     type: type,
@@ -550,7 +636,7 @@ export const positionSell = async (type: string, market: string, epic: string, l
                     size: quantity,
                     epic: epic,
                     open: true,
-                    buyPrice: position?.cumQuote ?? 0,
+                    buyPrice: position?.cumQuote ?? order?.cumQuote ?? 0,
                     sellPrice: 0,
                     ganancia: 0,
                     broker: 'binance',
