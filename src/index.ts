@@ -56,7 +56,10 @@ app.get('/', (req, res) => {
   res.send('servidor activo activo');
 });
 app.post('/binance/buy', (req, res) => {
+
   const payload = req.body;
+
+  console.log(payload)
 
   queue.add(async () => {
 
