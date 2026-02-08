@@ -16,7 +16,7 @@ import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
 
 // Importa las funciones de los módulos de broker
-import { positions, accountBalance, capitalbuyandsell, getprices } from './capital';
+// import { positions, accountBalance, capitalbuyandsell, getprices } from './capital';
 import { positionBuy, positionSell, startBinanceFuturesPositionStream } from './binance';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv } from './config/db/dashboard';
 import { startCapitalWorker } from './workers/capital';
@@ -71,10 +71,10 @@ app.get('/', (req, res) => {
  *           application/json:
  *             schema:
  *               type: object
- */
-app.get('/capital_balance', (req, res) => {
-  res.send(accountBalance());
-});
+//  */
+// app.get('/capital_balance', (req, res) => {
+//   res.send(accountBalance());
+// });
 
 /**
  * @swagger
@@ -91,12 +91,12 @@ app.get('/capital_balance', (req, res) => {
  *               type: object
  */
 
-app.post('/simulador', async (req, res) => {
-  const payload = req.body;
+// app.post('/simulador', async (req, res) => {
+//   const payload = req.body;
 
-  let r = await getprices(payload.epic, payload.size);
-  res.send(r);
-})
+//   let r = await getprices(payload.epic, payload.size);
+//   res.send(r);
+// })
 
 /**
  * @swagger
@@ -127,26 +127,26 @@ app.post('/simulador', async (req, res) => {
  *       500:
  *         description: Error al realizar la posición.
  */
-app.post('/capital_position', async (req, res) => {
+// app.post('/capital_position', async (req, res) => {
 
-  return res.send({ data: 'Endpoint en mantenimiento' });
-  const payload = req.body;
-  // logging removed
-  try {
+//   return res.send({ data: 'Endpoint en mantenimiento' });
+//   const payload = req.body;
+//   // logging removed
+//   try {
 
-    if (payload && Object.keys(payload).length > 0) {
-      let result = await positions(payload.epic, payload.size, payload.type, payload.strategy, io);
-      res.send({ data: result });
-    }
-    else {
-      return res.status(400).json({ msn: 'se recibio un payload vacio ', payload })
-    }
+//     if (payload && Object.keys(payload).length > 0) {
+//       let result = await positions(payload.epic, payload.size, payload.type, payload.strategy, io);
+//       res.send({ data: result });
+//     }
+//     else {
+//       return res.status(400).json({ msn: 'se recibio un payload vacio ', payload })
+//     }
 
-  } catch (e) {
-    // logging removed
-    res.send('Error al realizar la posicion');
-  }
-});
+//   } catch (e) {
+//     // logging removed
+//     res.send('Error al realizar la posicion');
+//   }
+// });
 
 /**
  * @swagger
@@ -179,24 +179,24 @@ app.post('/capital_position', async (req, res) => {
  */
 
 
-app.post('/capital_buyandsell', async (req, res) => {
-  return res.send({ data: 'Endpoint en mantenimiento' });
-  const payload = req.body;
-  // logging removed
-  try {
-    if (payload && Object.keys(payload).length > 0) {
-      let result = await capitalbuyandsell(payload.epic, payload.size, payload.type, payload.strategy, io);
-      return res.send({ data: result });
-    }
-    else {
-      return res.status(400).json({ msn: 'se recibio un payload vacio ', payload })
-    }
+// app.post('/capital_buyandsell', async (req, res) => {
+//   return res.send({ data: 'Endpoint en mantenimiento' });
+//   const payload = req.body;
+//   // logging removed
+//   try {
+//     if (payload && Object.keys(payload).length > 0) {
+//       let result = await capitalbuyandsell(payload.epic, payload.size, payload.type, payload.strategy, io);
+//       return res.send({ data: result });
+//     }
+//     else {
+//       return res.status(400).json({ msn: 'se recibio un payload vacio ', payload })
+//     }
 
-  } catch (e) {
-    // logging removed
-    res.send('Error al realizar la posicion');
-  }
-});
+//   } catch (e) {
+//     // logging removed
+//     res.send('Error al realizar la posicion');
+//   }
+// });
 
 /**
  * @swagger
