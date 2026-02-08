@@ -15,7 +15,7 @@ export async function binanceMarket(symbol: string, quoteOrderQty: number, type:
         symbol,
         side: type,
         type: "MARKET",
-        quoteOrderQty: quoteOrderQty.toString(), // cantidad en base asset (ej. "0.001")
+        quantity: quoteOrderQty.toString(), // cantidad en base asset (ej. "0.001")
         timestamp: Date.now().toString(),
         recvWindow: "5000",
     });

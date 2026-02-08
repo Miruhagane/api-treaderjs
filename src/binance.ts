@@ -292,7 +292,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     market: market.toUpperCase(),
                     type,
                     margen: 0,
-                    size: Number(order.quoteQty).toFixed(5) || 0,
+                    size: Number(order.qty).toFixed(5) || 0,
                     spotsizeSell: 0,
                     epic,
                     open: true,
@@ -422,8 +422,8 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     for (let orden of ordenes) {
                         const binanceOrder = await binanceMarket(orden.epic, orden.size, type.toUpperCase());
 
-                        let ganancia = Number(orden.size) - Number(binanceOrder.quoteQty);
-                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: binanceOrder.price, spotsizeSell: binanceOrder.quoteQty, brokercommissionSell: binanceOrder.commission, ganancia: Number(ganancia).toFixed(5) } });
+                        let ganancia = (Number(binanceOrder.price) - Number(orden.buyPrice)) * Number(orden.size);
+                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: binanceOrder.price, spotsizeSell: binanceOrder.qty, brokercommissionSell: binanceOrder.commission, ganancia: Number(ganancia).toFixed(5) } });
                     }
                 }
 
@@ -496,7 +496,7 @@ export const positionSell = async (type: string, market: string, epic: string, l
                     market: market.toUpperCase(),
                     type,
                     margen: 0,
-                    size: Number(order.quoteQty).toFixed(5) || 0,
+                    size: Number(order.qty).toFixed(5) || 0,
                     spotsizeSell: 0,
                     epic,
                     open: true,
@@ -618,8 +618,8 @@ export const positionSell = async (type: string, market: string, epic: string, l
                     for (let orden of ordenes) {
                         const binanceOrder = await binanceMarket(orden.epic, orden.size, type.toUpperCase());
 
-                        let ganancia = Number(orden.size) - Number(binanceOrder.quoteQty);
-                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: binanceOrder.price, spotsizeSell: binanceOrder.quoteQty, brokercommissionSell: binanceOrder.commission, ganancia: Number(ganancia).toFixed(5) } });
+                        let ganancia = (Number(orden.buyPrice) - Number(binanceOrder.price)) * Number(orden.size);
+                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: binanceOrder.price, spotsizeSell: binanceOrder.qty, brokercommissionSell: binanceOrder.commission, ganancia: Number(ganancia).toFixed(5) } });
                     }
                 }
             }
