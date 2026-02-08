@@ -13,10 +13,10 @@ dotenv.config();
 
 
 import movementsModel from "./config/models/movements";
-import HistoryModel from "./config/models/history";
 import { errorSendEmail } from "./config/mail";
 import { Server } from "socket.io";
-import { dashboard } from "./config/db/dashboard";
+import { marketBuy } from "./lib/binance/marketbuy";
+
 
 /**
  * Helpers de logging/validación
@@ -56,15 +56,20 @@ interface Balances {
  */
 const apiKey = process.env.Binance_ApiKey;
 const apiSecret = process.env.Binance_ApiSecret;
+
 const targetBaseUrl = process.env.BINANCE_BASEURL || 'https://testnet.binance.vision';
 const isFuturesTestnet = process.env.BINANCE_TESTNET ? process.env.BINANCE_TESTNET === 'true' : true;
 const futuresRestBaseUrl = process.env.BINANCE_FUTURES_BASEURL || (isFuturesTestnet ? 'https://testnet.binancefuture.com' : 'https://fapi.binance.com');
 const futuresWsBaseUrl = process.env.BINANCE_FUTURES_WS_URL || (isFuturesTestnet ? 'wss://stream.binancefuture.com/ws' : 'wss://fstream.binance.com/ws');
 
+
+
+
+
 validateEnv();
 
 // Initialize official Binance connector (Spot)
-const spot = new Spot(apiKey, apiSecret, { baseURL: targetBaseUrl });
+const spot = new Spot(apiKey, apiSecret, { baseURL: 'https://demo.binance.com' });
 const futures = new USDMClient({
     api_key: process.env.Binance_ApiKey,
     api_secret: process.env.Binance_ApiSecret,
@@ -279,67 +284,71 @@ export const positionBuy = async (type: string, market: string, epic: string, le
         try {
             if (market.toUpperCase() === 'SPOT') {
 
-                // Sanity check
-                if (!apiKey || !apiSecret) {
-                    throw new Error('Missing Binance_ApiKey or Binance_ApiSecret');
-                }
+                const order = await marketBuy(epic, quantity);
+                console.log('Market buy response:', order);
 
-                const order = await spot.newOrder(epic, 'BUY', 'MARKET', { quantity: 0.001 });
+                // // Sanity check
+                // if (!apiKey || !apiSecret) {
+                //     throw new Error('Missing Binance_ApiKey or Binance_ApiSecret');
+                // }
 
-                // seguridad: validar que fills exista antes de acceder
-                const fills = order?.data?.fills;
-                if (!fills || fills.length === 0) {
-                    // Log del error para facilitar debugging y notificar por email
-                    try {
-                        safeLogError('positionBuy SPOT no fills', { order: order?.data, epic, quantity, strategy, market, type });
-                        await errorSendEmail('positionBuy SPOT no fills', JSON.stringify({ order: order?.data, epic, quantity, strategy, market, type }, null, 2));
-                    } catch (e) {
-                        // ignore logging/email errors
-                    }
+                // console.log(`Executing SPOT BUY order: epic=${epic}, quantity=${quantity}, strategy=${strategy}`);
 
-                    // decide cómo manejarlo: aquí retornamos un mensaje y guardamos registro parcial
-                    const movementsPartial = new movementsModel({
-                        idRefBroker: order?.data?.orderId ?? null,
-                        strategy,
-                        market: market.toUpperCase(),
-                        type,
-                        margen: 0,
-                        size: quantity,
-                        epic,
-                        open: true,
-                        buyPrice: 0,
-                        sellPrice: 0,
-                        ganancia: 0,
-                        broker: 'binance',
-                        date: new Date(),
-                        myRegionalDate: new Date().setHours(new Date().getHours() - 5)
-                    });
-                    let movement = await movementsPartial.save();
+                // const order = await spot.newOrder(epic, 'BUY', 'lIMIT', { price: '69074.01', });
 
-                    console.log('Saved partial movement due to no fills:', movement);
-                    return 'Orden ejecutada pero no se recibieron fills; revisa logs.';
-                }
+                // // seguridad: validar que fills exista antes de acceder
+                // const fills = order?.data?.fills;
+                // if (!fills || fills.length === 0) {
+                //     // Log del error para facilitar debugging y notificar por email
+                //     try {
+                //         safeLogError('positionBuy SPOT no fills', { order: order?.data, epic, quantity, strategy, market, type });
+                //         await errorSendEmail('positionBuy SPOT no fills', JSON.stringify({ order: order?.data, epic, quantity, strategy, market, type }, null, 2));
+                //     } catch (e) {
+                //         // ignore logging/email errors
+                //     }
 
-                const fill = fills[0];
+                //     // decide cómo manejarlo: aquí retornamos un mensaje y guardamos registro parcial
+                //     const movementsPartial = new movementsModel({
+                //         idRefBroker: order?.data?.orderId ?? null,
+                //         strategy,
+                //         market: market.toUpperCase(),
+                //         type,
+                //         margen: 0,
+                //         size: quantity,
+                //         epic,
+                //         open: true,
+                //         buyPrice: 0,
+                //         sellPrice: 0,
+                //         ganancia: 0,
+                //         broker: 'binance',
+                //         date: new Date(),
+                //         myRegionalDate: new Date().setHours(new Date().getHours() - 5)
+                //     });
+                //     let movement = await movementsPartial.save();
 
-                const movements = new movementsModel({
-                    idRefBroker: order.data.orderId,
-                    strategy: strategy,
-                    market: market.toUpperCase(),
-                    type: type,
-                    margen: 0,
-                    size: quantity,
-                    epic: epic,
-                    open: true,
-                    buyPrice: Number(fill.price) * Number(fill.qty),
-                    sellPrice: 0,
-                    ganancia: 0,
-                    broker: 'binance',
-                    date: new Date(),
-                    myRegionalDate: new Date().setHours(new Date().getHours() - 5)
-                })
+                //     return 'Orden ejecutada pero no se recibieron fills; revisa logs.';
+                // }
 
-                let movement = await movements.save();
+                // const fill = fills[0];
+
+                // const movements = new movementsModel({
+                //     idRefBroker: order.data.orderId,
+                //     strategy: strategy,
+                //     market: market.toUpperCase(),
+                //     type: type,
+                //     margen: 0,
+                //     size: quantity,
+                //     epic: epic,
+                //     open: true,
+                //     buyPrice: Number(fill.price) * Number(fill.qty),
+                //     sellPrice: 0,
+                //     ganancia: 0,
+                //     broker: 'binance',
+                //     date: new Date(),
+                //     myRegionalDate: new Date().setHours(new Date().getHours() - 5)
+                // })
+
+                // let movement = await movements.save();
 
             }
             else if (market.toUpperCase() === 'FUTURE') {
@@ -434,8 +443,8 @@ export const positionBuy = async (type: string, market: string, epic: string, le
         }
         catch (error: any) {
             try {
-                safeLogError('future.newOrder ERROR', error);
-                await errorSendEmail('future.newOrder ERROR', JSON.stringify({ message: error?.message, stack: error?.stack }, null, 2));
+                safeLogError('newOrder ERROR', error);
+                await errorSendEmail('newOrder ERROR', JSON.stringify({ message: error?.message, stack: error?.stack }, null, 2));
             } catch (e) {
                 // ignore logging/email errors
             }

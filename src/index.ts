@@ -222,10 +222,6 @@ app.post('/capital_buyandsell', async (req, res) => {
 app.post('/binance/buy', (req, res) => {
   const payload = req.body;
 
-  if (payload.market.toUpperCase() === 'SPOT') {
-    return res.send({ data: 'Operaciones Spot no permitidas' });
-  }
-
   queue.add(async () => {
 
     try {
