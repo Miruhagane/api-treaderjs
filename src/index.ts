@@ -10,7 +10,6 @@ import { Parser } from 'json2csv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { dbconection } from './config/db';
-import { getRabbitMQChannel, connectRabbitMQ } from './config/rabbitmq';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
@@ -19,7 +18,6 @@ import swaggerSpec from './config/swagger';
 // import { positions, accountBalance, capitalbuyandsell, getprices } from './capital';
 import { positionBuy, positionSell, startBinanceFuturesPositionStream } from './binance';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv } from './config/db/dashboard';
-import { startCapitalWorker } from './workers/capital';
 
 const app = express();
 app.use(cors());
@@ -447,12 +445,6 @@ const startServer = async () => {
   try {
     // 1. Conectar a la base de datos
     await dbconection();
-
-    // 2. Conectar a RabbitMQ y esperar a que esté listo
-    await connectRabbitMQ();
-
-    // 3. Iniciar los workers que dependen de RabbitMQ
-    startCapitalWorker(io);
 
     // 4. Iniciar stream de posiciones de Binance Futures (WS)
     startBinanceFuturesPositionStream(io).catch((err) => {
