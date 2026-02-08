@@ -36,6 +36,9 @@ export class movements {
     @prop({ required: true })
     size: number
 
+    @prop({ required: false })
+    spotsizeSell: number
+
     /**
      * The buying price of the movement.
      */
@@ -47,6 +50,15 @@ export class movements {
      */
     @prop({ required: true })
     sellPrice: number
+
+
+    @prop({ required: false })
+    brokercommission: number
+
+
+    @prop({ required: false })
+    brokercommissionSell: number
+
 
     /**
     * The margin of the movement.

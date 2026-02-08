@@ -10,16 +10,14 @@ import { Parser } from 'json2csv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { dbconection } from './config/db';
-import { getRabbitMQChannel, connectRabbitMQ } from './config/rabbitmq';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
 
 // Importa las funciones de los módulos de broker
-import { positions, accountBalance, capitalbuyandsell, getprices } from './capital';
+// import { positions, accountBalance, capitalbuyandsell, getprices } from './capital';
 import { positionBuy, positionSell, startBinanceFuturesPositionStream } from './binance';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv } from './config/db/dashboard';
-import { startCapitalWorker } from './workers/capital';
 
 const app = express();
 app.use(cors());
@@ -57,174 +55,8 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get('/', (req, res) => {
   res.send('servidor activo activo');
 });
-
-/**
- * @swagger
- * /capital_balance:
- *   get:
- *     summary: Obtiene el balance de la cuenta de Capital.com
- *     description: Obtiene y devuelve el balance de la cuenta de Capital.com.
- *     responses:
- *       200:
- *         description: Balance de la cuenta.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- */
-app.get('/capital_balance', (req, res) => {
-  res.send(accountBalance());
-});
-
-/**
- * @swagger
- * /capital_balance:
- *   post:
- *     summary: el valor aproximado de la cuenta de simulacion
- *     description: Obtiene y devuelve el balance de la cuenta de Capital.com.
- *     responses:
- *       200:
- *         description: simulacion .
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- */
-
-app.post('/simulador', async (req, res) => {
-  const payload = req.body;
-
-  let r = await getprices(payload.epic, payload.size);
-  res.send(r);
-})
-
-/**
- * @swagger
- * /capital_position:
- *   post:
- *     summary: Crea una nueva posición en Capital.com
- *     description: Crea una nueva posición en Capital.com.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               epic:
- *                 type: string
- *               size:
- *                 type: number
- *               type:
- *                 type: string
- *               strategy:
- *                 type: string
- *     responses:
- *       200:
- *         description: Posición creada.
- *       400:
- *         description: Payload vacío.
- *       500:
- *         description: Error al realizar la posición.
- */
-app.post('/capital_position', async (req, res) => {
-
-  return res.send({ data: 'Endpoint en mantenimiento' });
-  const payload = req.body;
-  // logging removed
-  try {
-
-    if (payload && Object.keys(payload).length > 0) {
-      let result = await positions(payload.epic, payload.size, payload.type, payload.strategy, io);
-      res.send({ data: result });
-    }
-    else {
-      return res.status(400).json({ msn: 'se recibio un payload vacio ', payload })
-    }
-
-  } catch (e) {
-    // logging removed
-    res.send('Error al realizar la posicion');
-  }
-});
-
-/**
- * @swagger
- * /capital_buyandsell:
- *   post:
- *     summary: Compra y vende en Capital.com
- *     description: Realiza una operación de compra y venta en Capital.com.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               epic:
- *                 type: string
- *               size:
- *                 type: number
- *               type:
- *                 type: string
- *               strategy:
- *                 type: string
- *     responses:
- *       200:
- *         description: Operación realizada.
- *       400:
- *         description: Payload vacío.
- *       500:
- *         description: Error al realizar la operación.
- */
-
-
-app.post('/capital_buyandsell', async (req, res) => {
-  return res.send({ data: 'Endpoint en mantenimiento' });
-  const payload = req.body;
-  // logging removed
-  try {
-    if (payload && Object.keys(payload).length > 0) {
-      let result = await capitalbuyandsell(payload.epic, payload.size, payload.type, payload.strategy, io);
-      return res.send({ data: result });
-    }
-    else {
-      return res.status(400).json({ msn: 'se recibio un payload vacio ', payload })
-    }
-
-  } catch (e) {
-    // logging removed
-    res.send('Error al realizar la posicion');
-  }
-});
-
-/**
- * @swagger
- * /binance:
- *   post:
- *     summary: Crea una nueva posición en Binance
- *     description: Crea una nueva posición en Binance.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               type:
- *                 type: string
- *               strategy:
- *                 type: string
- *     responses:
- *       200:
- *         description: Posición creada.
- */
 app.post('/binance/buy', (req, res) => {
   const payload = req.body;
-
-  if (payload.market.toUpperCase() === 'SPOT') {
-    return res.send({ data: 'Operaciones Spot no permitidas' });
-  }
 
   queue.add(async () => {
 
@@ -451,12 +283,6 @@ const startServer = async () => {
   try {
     // 1. Conectar a la base de datos
     await dbconection();
-
-    // 2. Conectar a RabbitMQ y esperar a que esté listo
-    await connectRabbitMQ();
-
-    // 3. Iniciar los workers que dependen de RabbitMQ
-    startCapitalWorker(io);
 
     // 4. Iniciar stream de posiciones de Binance Futures (WS)
     startBinanceFuturesPositionStream(io).catch((err) => {

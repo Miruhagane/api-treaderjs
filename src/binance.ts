@@ -13,10 +13,10 @@ dotenv.config();
 
 
 import movementsModel from "./config/models/movements";
-import HistoryModel from "./config/models/history";
 import { errorSendEmail } from "./config/mail";
 import { Server } from "socket.io";
-import { dashboard } from "./config/db/dashboard";
+import { binanceMarket } from "./lib/binance/market";
+
 
 /**
  * Helpers de logging/validación
@@ -56,15 +56,20 @@ interface Balances {
  */
 const apiKey = process.env.Binance_ApiKey;
 const apiSecret = process.env.Binance_ApiSecret;
+
 const targetBaseUrl = process.env.BINANCE_BASEURL || 'https://testnet.binance.vision';
 const isFuturesTestnet = process.env.BINANCE_TESTNET ? process.env.BINANCE_TESTNET === 'true' : true;
 const futuresRestBaseUrl = process.env.BINANCE_FUTURES_BASEURL || (isFuturesTestnet ? 'https://testnet.binancefuture.com' : 'https://fapi.binance.com');
 const futuresWsBaseUrl = process.env.BINANCE_FUTURES_WS_URL || (isFuturesTestnet ? 'wss://stream.binancefuture.com/ws' : 'wss://fstream.binance.com/ws');
 
+
+
+
+
 validateEnv();
 
 // Initialize official Binance connector (Spot)
-const spot = new Spot(apiKey, apiSecret, { baseURL: targetBaseUrl });
+const spot = new Spot(apiKey, apiSecret, { baseURL: 'https://demo.binance.com' });
 const futures = new USDMClient({
     api_key: process.env.Binance_ApiKey,
     api_secret: process.env.Binance_ApiSecret,
@@ -279,68 +284,29 @@ export const positionBuy = async (type: string, market: string, epic: string, le
         try {
             if (market.toUpperCase() === 'SPOT') {
 
-                // Sanity check
-                if (!apiKey || !apiSecret) {
-                    throw new Error('Missing Binance_ApiKey or Binance_ApiSecret');
-                }
+                const order = await binanceMarket(epic, quantity, type.toUpperCase());
 
-                const order = await spot.newOrder(epic, 'BUY', 'MARKET', { quantity: 0.001 });
-
-                // seguridad: validar que fills exista antes de acceder
-                const fills = order?.data?.fills;
-                if (!fills || fills.length === 0) {
-                    // Log del error para facilitar debugging y notificar por email
-                    try {
-                        safeLogError('positionBuy SPOT no fills', { order: order?.data, epic, quantity, strategy, market, type });
-                        await errorSendEmail('positionBuy SPOT no fills', JSON.stringify({ order: order?.data, epic, quantity, strategy, market, type }, null, 2));
-                    } catch (e) {
-                        // ignore logging/email errors
-                    }
-
-                    // decide cómo manejarlo: aquí retornamos un mensaje y guardamos registro parcial
-                    const movementsPartial = new movementsModel({
-                        idRefBroker: order?.data?.orderId ?? null,
-                        strategy,
-                        market: market.toUpperCase(),
-                        type,
-                        margen: 0,
-                        size: quantity,
-                        epic,
-                        open: true,
-                        buyPrice: 0,
-                        sellPrice: 0,
-                        ganancia: 0,
-                        broker: 'binance',
-                        date: new Date(),
-                        myRegionalDate: new Date().setHours(new Date().getHours() - 5)
-                    });
-                    let movement = await movementsPartial.save();
-
-                    console.log('Saved partial movement due to no fills:', movement);
-                    return 'Orden ejecutada pero no se recibieron fills; revisa logs.';
-                }
-
-                const fill = fills[0];
-
-                const movements = new movementsModel({
-                    idRefBroker: order.data.orderId,
-                    strategy: strategy,
+                const movementsPartial = new movementsModel({
+                    idRefBroker: order.orderId,
+                    strategy,
                     market: market.toUpperCase(),
-                    type: type,
+                    type,
                     margen: 0,
-                    size: quantity,
-                    epic: epic,
+                    size: Number(order.quoteQty).toFixed(5) || 0,
+                    spotsizeSell: 0,
+                    epic,
                     open: true,
-                    buyPrice: Number(fill.price) * Number(fill.qty),
+                    buyPrice: Number(order.price),
                     sellPrice: 0,
+                    brokercommission: Number(order.commission).toFixed(8) || 0,
+                    brokercommissionSell: 0,
                     ganancia: 0,
                     broker: 'binance',
                     date: new Date(),
                     myRegionalDate: new Date().setHours(new Date().getHours() - 5)
-                })
+                });
 
-                let movement = await movements.save();
-
+                await movementsPartial.save();
             }
             else if (market.toUpperCase() === 'FUTURE') {
 
@@ -434,8 +400,8 @@ export const positionBuy = async (type: string, market: string, epic: string, le
         }
         catch (error: any) {
             try {
-                safeLogError('future.newOrder ERROR', error);
-                await errorSendEmail('future.newOrder ERROR', JSON.stringify({ message: error?.message, stack: error?.stack }, null, 2));
+                safeLogError('newOrder ERROR', error);
+                await errorSendEmail('newOrder ERROR', JSON.stringify({ message: error?.message, stack: error?.stack }, null, 2));
             } catch (e) {
                 // ignore logging/email errors
             }
@@ -451,37 +417,22 @@ export const positionBuy = async (type: string, market: string, epic: string, le
 
             if (market.toUpperCase() === 'SPOT') {
 
-                const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'binance' });
-
+                const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'binance', market: 'SPOT' }).sort({ date: -1 });
                 if (ordenes.length > 0) {
                     for (let orden of ordenes) {
+                        const binanceOrder = await binanceMarket(orden.epic, orden.size, type.toUpperCase());
 
-                        // logging removed
-                        const order = await spot.newOrder(orden.epic, 'SELL', 'MARKET', { quantity: orden.size });
-                        const fills = order?.data?.fills;
-                        if (!fills || fills.length === 0) {
-                            try {
-                                safeLogError('positionBuy SPOT SELL no fills', { order: order?.data, ordenId: orden._id, epic: orden.epic });
-                                await errorSendEmail('positionBuy SPOT SELL no fills', JSON.stringify({ order: order?.data, ordenId: orden._id, epic: orden.epic }, null, 2));
-                            } catch (e) {
-                                // ignore logging/email errors
-                            }
-
-                            await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
-                            continue;
-                        }
-                        const fill = fills[0];
-
-                        let ganancia = Number(fill.price) * Number(fill.qty) - orden.buyPrice;
-                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: Number(fill.price) * Number(fill.qty), ganancia: ganancia } });
-
+                        let ganancia = Number(orden.size) - Number(binanceOrder.quoteQty);
+                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: binanceOrder.price, spotsizeSell: binanceOrder.quoteQty, brokercommissionSell: binanceOrder.commission, ganancia: Number(ganancia).toFixed(5) } });
                     }
                 }
+
+
             }
 
             else if (market.toUpperCase() === 'FUTURE') {
 
-                const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'binance' });
+                const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'binance', market: 'FUTURE' }).sort({ date: -1 });
 
                 if (ordenes.length > 0) {
                     for (let orden of ordenes) {
@@ -537,38 +488,29 @@ export const positionSell = async (type: string, market: string, epic: string, l
         try {
             if (market.toUpperCase() === 'SPOT') {
                 // logging removed
-                const order = await spot.newOrder(epic, 'SELL', 'MARKET', { quantity: quantity });
+                const order = await binanceMarket(epic, quantity, type.toUpperCase());
 
-                const fills = order?.data?.fills;
-                if (!fills || fills.length === 0) {
-                    try {
-                        safeLogError('positionSell SPOT no fills', { order: order?.data, epic, quantity, strategy, market, type });
-                        await errorSendEmail('positionSell SPOT no fills', JSON.stringify({ order: order?.data, epic, quantity, strategy, market, type }, null, 2));
-                    } catch (e) {
-                        // ignore logging/email errors
-                    }
-                } else {
-                    const fill = fills[0];
+                const movementsPartial = new movementsModel({
+                    idRefBroker: order.orderId,
+                    strategy,
+                    market: market.toUpperCase(),
+                    type,
+                    margen: 0,
+                    size: Number(order.quoteQty).toFixed(5) || 0,
+                    spotsizeSell: 0,
+                    epic,
+                    open: true,
+                    buyPrice: Number(order.price),
+                    sellPrice: 0,
+                    brokercommission: Number(order.commission).toFixed(8) || 0,
+                    brokercommissionSell: 0,
+                    ganancia: 0,
+                    broker: 'binance',
+                    date: new Date(),
+                    myRegionalDate: new Date().setHours(new Date().getHours() - 5)
+                });
 
-                    const movements = new movementsModel({
-                        idRefBroker: order.data.orderId,
-                        strategy: strategy,
-                        market: market.toUpperCase(),
-                        type: type,
-                        margen: 0,
-                        size: quantity,
-                        epic: epic,
-                        open: true,
-                        buyPrice: Number(fill.price) * Number(fill.qty),
-                        sellPrice: 0,
-                        ganancia: 0,
-                        broker: 'binance',
-                        date: new Date(),
-                        myRegionalDate: new Date().setHours(new Date().getHours() - 5)
-                    })
-
-                    await movements.save();
-                }
+                await movementsPartial.save();
 
                 // io.emit('dashboard_update', { type: type, strategy: strategy });
             }
@@ -671,24 +613,13 @@ export const positionSell = async (type: string, market: string, epic: string, l
 
             if (market.toUpperCase() === 'SPOT') {
 
-                const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'binance' });
-
+                const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'binance', market: 'SPOT' }).sort({ date: -1 });
                 if (ordenes.length > 0) {
                     for (let orden of ordenes) {
+                        const binanceOrder = await binanceMarket(orden.epic, orden.size, type.toUpperCase());
 
-                        // logging removed
-                        const order = await spot.newOrder(orden.epic, 'BUY', 'MARKET', { quantity: orden.size });
-                        const fills = order?.data?.fills;
-                        if (!fills || fills.length === 0) {
-                            // logging removed
-                            await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
-                            continue;
-                        }
-                        const fill = fills[0];
-
-                        let ganancia = Number(fill.price) * Number(fill.qty) - orden.buyPrice;
-                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: Number(fill.price) * Number(fill.qty), ganancia: ganancia } });
-
+                        let ganancia = Number(orden.size) - Number(binanceOrder.quoteQty);
+                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: binanceOrder.price, spotsizeSell: binanceOrder.quoteQty, brokercommissionSell: binanceOrder.commission, ganancia: Number(ganancia).toFixed(5) } });
                     }
                 }
             }
