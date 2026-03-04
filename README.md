@@ -102,6 +102,12 @@ Para ejecutar la suite de tests, utiliza el siguiente comando:
 npm test
 ```
 
+## 📝 Registro (Logs)
+
+Se han eliminado las llamadas directas a `console.log()` en el código fuente para evitar salida de consola no controlada en producción. Se recomienda utilizar una solución de logging estructurado (por ejemplo `winston`, `pino` u otra) para gestionar niveles de log (info, warn, error) y persistir/rotar logs según sea necesario.
+
+Si necesitas que agregue un logger centralizado y reemplace las llamadas por un mecanismo de logging configurables, dime cuál prefieres y lo implemento.
+
 ## 🏛️ Arquitectura y Decisiones de Diseño
 
 ### Gestión de Sesión y Tokens

@@ -16,6 +16,7 @@ import movementsModel from "./config/models/movements";
 import { errorSendEmail } from "./config/mail";
 import { Server } from "socket.io";
 import { binanceMarket } from "./lib/binance/market";
+import { emit } from "process";
 
 
 /**
@@ -277,7 +278,7 @@ export const startBinanceFuturesPositionStream = async (io: Server, isReconnect 
 /**
  * positionBuy
  */
-export const positionBuy = async (type: string, market: string, epic: string, leverage: number, quantity: number, strategy: string) => {
+export const positionBuy = async (type: string, market: string, epic: string, leverage: number, quantity: number, strategy: string, io: Server) => {
 
     if (type.toUpperCase() === 'BUY') {
 
@@ -313,7 +314,6 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                 await futures.setLeverage({ symbol: epic, leverage: leverage });
 
                 const order = await futures.submitNewOrder({ symbol: epic, side: 'BUY', type: 'MARKET', quantity: quantity });
-                console.log('FUTURE order response:', util.inspect(order, { depth: null }));
 
                 // intentamos obtener orderId de distintas formas (diferentes formas de respuesta según SDK/entorno)
                 const orderAny: any = order;
@@ -389,12 +389,13 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                     myRegionalDate: new Date().setHours(new Date().getHours() - 5)
                 })
                 let movement = await movements.save();
-                console.log('FUTURE movement saved:', movement);
+                // logging removed
             }
             else {
                 return "Tipo de mercado no soportado.";
             }
 
+            io.emit('dashboard_update', { type: type, strategy: strategy });
             return " Orden de compra ejecutada y registrada en la base de datos."
 
         }
@@ -465,6 +466,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                 return "Tipo de mercado no soportado.";
             }
 
+            io.emit('dashboard_update', { type: type, strategy: strategy });
             return " Orden de venta ejecutada y registros actualizados."
         } catch (error) {
             try {

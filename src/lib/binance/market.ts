@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { getLogger } from '../../config/logger';
+const log = getLogger('market');
 import crypto from 'crypto';
 
 const API_KEY = process.env.Binance_ApiKey;
@@ -35,7 +37,7 @@ export async function binanceMarket(symbol: string, quoteOrderQty: number, type:
         return await getOrderInformation(symbol, res.data.orderId);
     }
     catch (error) {
-        console.error('Error en marketBuy:', error.response ? error.response.data : error.message);
+        log.error({ err: error, body: error.response ? error.response.data : error.message }, 'Error en marketBuy');
         throw error;
     }
 
@@ -64,7 +66,7 @@ async function getOrderInformation(symbol: string, orderId: number) {
         return res.data.filter((t: any) => t.orderId === orderId)[0];
     }
     catch (error) {
-        console.error('Error en getOrderInformation:', error.response ? error.response.data : error.message);
+        log.error({ err: error, body: error.response ? error.response.data : error.message }, 'Error en getOrderInformation');
         throw error;
     }
 

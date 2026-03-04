@@ -1,5 +1,7 @@
 import { Resend } from "resend";
 import dotenv from 'dotenv';
+import { getLogger } from './logger';
+const log = getLogger('mail');
 dotenv.config();
 
 
@@ -11,7 +13,7 @@ const resend = new Resend('re_LGhVwTB9_Gubdv1meDToKGaCQMUjfGLgM');
  * @param asunto - The subject of the email.
  * @param mensaje - The error message to be sent.
  */
-export const errorSendEmail = async(asunto: string, mensaje: string) => {
+export const errorSendEmail = async (asunto: string, mensaje: string) => {
   try {
     await resend.emails.send({
       from: 'onboarding@resend.dev',
@@ -22,9 +24,9 @@ export const errorSendEmail = async(asunto: string, mensaje: string) => {
   } catch (err) {
     // Evita que el rechazo de la librería burbujee sin catch
     try {
-      console.error('errorSendEmail failed', err);
+      log.error({ err }, 'errorSendEmail failed');
     } catch (_) {
-      // ignore console errors
+      // ignore logger errors
     }
   }
 }

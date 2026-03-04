@@ -17,6 +17,9 @@ import swaggerSpec from './config/swagger';
 // Importa las funciones de los módulos de broker
 // import { positions, accountBalance, capitalbuyandsell, getprices } from './capital';
 import { positionBuy, positionSell, startBinanceFuturesPositionStream } from './binance';
+import baseLogger, { getLogger } from './config/logger';
+import loggerMiddleware from './config/loggerMiddleware';
+import expressPino from 'express-pino-logger';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv } from './config/db/dashboard';
 
 const app = express();
@@ -30,10 +33,14 @@ const io = new Server(httpServer, {
 });
 
 const queue = new PQueue({ concurrency: 1 });
+const log = getLogger('index');
+const expressLogger = expressPino({ logger: baseLogger });
 
 
 // Middleware para parsear el cuerpo de las solicitudes JSON
 app.use(bodyParser.json());
+app.use(expressLogger);
+app.use(loggerMiddleware);
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
@@ -55,20 +62,22 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get('/', (req, res) => {
   res.send('servidor activo activo');
 });
+
+
 app.post('/binance/buy', (req, res) => {
 
   const payload = req.body;
-
-  console.log(payload)
+  // logging removed
 
   queue.add(async () => {
 
     try {
-      const result = await positionBuy(req.body.type, req.body.market, req.body.epic, req.body.leverage, req.body.size, req.body.strategy);
+      const result = await positionBuy(req.body.type, req.body.market, req.body.epic, req.body.leverage, req.body.size, req.body.strategy, io);
       res.status(200).send(result);
 
     } catch (error) {
-      console.error('Error en operación de compra en Binance:', error);
+      const lg = (req as any).logger || log;
+      lg.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación de compra en Binance');
       res.status(500).send('Error al realizar la operación de compra en Binance');
     }
   });
@@ -85,13 +94,13 @@ app.post('/binance/sell', (req, res) => {
   queue.add(async () => {
 
     try {
-      console.log('Ejecutando operación de venta en Binance...');
-      console.log('Payload recibido:', req.body);
+      // logging removed
       const result = await positionSell(req.body.type, req.body.market, req.body.epic, req.body.leverage, req.body.size, req.body.strategy);
       res.status(200).send(result);
     }
     catch (error) {
-      console.error('Error en operación de venta en Binance:', error);
+      const lg = (req as any).logger || log;
+      lg.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación de venta en Binance');
       res.status(500).send('Error al realizar la operación de venta en Binance');
     }
   });
@@ -272,8 +281,9 @@ app.get('/ganancia_broker', async (req, res) => {
  */
 io.on('connection', (socket) => {
   // logging removed
+  // logging removed
   socket.on('disconnect', () => {
-    // logging removed
+
   });
 });
 
@@ -295,6 +305,7 @@ const startServer = async () => {
     // 5. Iniciar el servidor HTTP
     const port = parseInt(process.env.PORT || '3000');
     httpServer.listen(port, () => {
+
       // logging removed
     });
 
