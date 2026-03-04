@@ -103,10 +103,43 @@ npm test
 ```
 
 ## 📝 Registro (Logs)
+Se han eliminado las llamadas directas a `console.log()` en el código fuente para evitar salida de consola no controlada en producción. El proyecto ahora usa `pino` como logger estructurado y `express-pino-logger` para el logging HTTP.
 
-Se han eliminado las llamadas directas a `console.log()` en el código fuente para evitar salida de consola no controlada en producción. Se recomienda utilizar una solución de logging estructurado (por ejemplo `winston`, `pino` u otra) para gestionar niveles de log (info, warn, error) y persistir/rotar logs según sea necesario.
+- **Logger central:** `src/config/logger.ts` expone un `baseLogger` y una función `getLogger(moduleName)` para crear loggers con campos estándar: `service`, `module`, etc.
+- **HTTP logging:** `express-pino-logger` está registrado en la app; además existe `src/config/loggerMiddleware.ts` que asigna `req.reqId` y `req.logger` (child logger) para cada petición.
+- **Formato legible en desarrollo:** `pino-pretty` está instalado como dependencia de desarrollo y se activa cuando `NODE_ENV=development` (el logger usa `pino-pretty` como transport en desarrollo).
 
-Si necesitas que agregue un logger centralizado y reemplace las llamadas por un mecanismo de logging configurables, dime cuál prefieres y lo implemento.
+Variables de entorno relevantes:
+
+- `LOG_LEVEL` — nivel de log (`trace`, `debug`, `info`, `warn`, `error`, `fatal`). Por defecto `info`.
+- `NODE_ENV` — si está en `development`, los logs se formatean con `pino-pretty` para facilitar la lectura local.
+
+Ejemplos de ejecución durante desarrollo (Windows PowerShell):
+
+```powershell
+$env:NODE_ENV = 'development'
+$env:LOG_LEVEL = 'debug'
+npm run dev
+```
+
+En Linux / macOS:
+
+```bash
+NODE_ENV=development LOG_LEVEL=debug npm run dev
+```
+
+Qué aparece en la consola / Railway:
+
+- Todos los logs estructurados generados por `pino` y `express-pino-logger` salen por `stdout` (info) o `stderr` (errores). Railway captura ambos streams y muestra los registros en su panel de logs.
+- Cada petición HTTP incluye un `reqId` y metadatos (`method`, `url`, `status`, `time`) y los controladores pueden utilizar `req.logger` para añadir contexto adicional (`strategy`, `epic`, `orderId`, etc.).
+
+Buenas prácticas recomendadas:
+
+- Usa `getLogger(moduleName)` para obtener un logger con campos estándar por módulo.
+- En handlers usa `const lg = req.logger || getLogger('module')` y registra `lg.info({ event: 'something_happened', ...meta }, 'event_short_message')`.
+- Evita imprimir objetos grandes sin procesar; registra sólo campos relevantes (ids, estados, errores con stack en `error`).
+
+Si quieres que lo adapte para enviar logs a un servicio externo (Logflare, Datadog, etc.) o que los errores vayan explícitamente a `stderr`, lo implemento.
 
 ## 🏛️ Arquitectura y Decisiones de Diseño
 
