@@ -2,5 +2,5 @@
   "watch": ["src"],
   "ext": "ts,json",
   "ignore": [],
-  "exec": ".\\node_modules\\.bin\\ts-node ./src/index.ts"
+  "exec": ".\\node_modules\\.bin\\ts-node ./src/index.ts | .\\node_modules\\.bin\\pino-pretty --translateTime 'yyyy-mm-dd HH:MM:ss' --levelFirst --colorize"
 }

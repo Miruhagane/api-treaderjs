@@ -401,7 +401,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
         }
         catch (error: any) {
             try {
-                safeLogError('newOrder ERROR', error);
+
                 await errorSendEmail('newOrder ERROR', JSON.stringify({ message: error?.message, stack: error?.stack }, null, 2));
             } catch (e) {
                 // ignore logging/email errors
