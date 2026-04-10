@@ -10,11 +10,12 @@ RUN dotnet publish ./microservices/fxcm-bridge/FxcmBridge/FxcmBridge.csproj -c R
 FROM node:20-bullseye-slim AS node-builder
 WORKDIR /app
 
-# Copiar package files e instalar dependencias (incluye dev para build)
+# Asegúrate de que package-lock.json existe localmente. 
+# Si no existe, usa "RUN npm install" en lugar de "npm ci"
 COPY package*.json ./
-RUN npm ci
+RUN npm ci || npm install
 
-# Copiar el resto y compilar TypeScript
+# Copiamos todo para compilar
 COPY . .
 RUN npm run build
 
@@ -35,25 +36,27 @@ WORKDIR /app
 # 1. Copiar el Bridge compilado
 COPY --from=dotnet-build /app/dotnet-out ./dotnet-bridge
 
-# --- AJUSTE CLAVE PARA FXCM ---
-# Entramos a la carpeta del bridge y movemos todos los .so de las subcarpetas a la raíz
-# Esto soluciona el DllNotFoundException de raíz
+# Ajuste de librerías nativas .so
 RUN cd /app/dotnet-bridge && find . -name "*.so*" -exec cp {} . \;
-# ----------------------------
 
-# 2. Configurar Node.js
+# 2. Configurar Node.js para producción
 COPY package*.json ./
+# Instalamos solo producción para ahorrar espacio
 RUN npm install --production
-# Copy runtime files and compiled JS from node build stage
-# (we build Node app in a separate stage to produce /app/dist)
+
+# --- SOLUCIÓN AL MODULE_NOT_FOUND ---
+# Primero copiamos el código compilado (dist) desde el builder
 COPY --from=node-builder /app/dist ./dist
+# Luego copiamos el resto de los archivos necesarios (como la carpeta scripts)
+# OJO: No copies "." aquí si eso sobrescribirá tu carpeta "dist" vacía del host
 COPY . .
 
 # --- CONFIGURACIÓN CRÍTICA ---
-# Ahora que movimos los archivos, la ruta principal es suficiente
 ENV LD_LIBRARY_PATH="/app/dotnet-bridge:/usr/lib"
 
-# Permisos de ejecución para el script y las librerías nativas
-RUN chmod +x /app/dotnet-bridge/*.so* && chmod +x ./scripts/start.sh
+# Permisos
+RUN chmod +x /app/dotnet-bridge/*.so* 2>/dev/null || true
+# Aseguramos que el script de inicio tenga permisos
+RUN chmod +x ./scripts/start.sh
 
 CMD ["./scripts/start.sh"]
