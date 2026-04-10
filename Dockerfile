@@ -6,6 +6,18 @@ RUN dotnet restore ./microservices/fxcm-bridge/FxcmBridge/FxcmBridge.csproj
 COPY . .
 RUN dotnet publish ./microservices/fxcm-bridge/FxcmBridge/FxcmBridge.csproj -c Release -o /app/dotnet-out
 
+# --- ETAPA 1.5: Compilar Node (TypeScript) ---
+FROM node:20-bullseye-slim AS node-builder
+WORKDIR /app
+
+# Copiar package files e instalar dependencias (incluye dev para build)
+COPY package*.json ./
+RUN npm ci
+
+# Copiar el resto y compilar TypeScript
+COPY . .
+RUN npm run build
+
 # --- ETAPA 2: Runtime Final ---
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 
@@ -32,6 +44,9 @@ RUN cd /app/dotnet-bridge && find . -name "*.so*" -exec cp {} . \;
 # 2. Configurar Node.js
 COPY package*.json ./
 RUN npm install --production
+# Copy runtime files and compiled JS from node build stage
+# (we build Node app in a separate stage to produce /app/dist)
+COPY --from=node-builder /app/dist ./dist
 COPY . .
 
 # --- CONFIGURACIÓN CRÍTICA ---
