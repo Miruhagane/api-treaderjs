@@ -1,0 +1,6 @@
+@FxcmBridge_HostAddress = http://localhost:5226
+
+GET {{FxcmBridge_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

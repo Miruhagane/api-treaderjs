@@ -16,7 +16,6 @@ import movementsModel from "./config/models/movements";
 import { errorSendEmail } from "./config/mail";
 import { Server } from "socket.io";
 import { binanceMarket } from "./lib/binance/market";
-import { emit } from "process";
 
 
 /**

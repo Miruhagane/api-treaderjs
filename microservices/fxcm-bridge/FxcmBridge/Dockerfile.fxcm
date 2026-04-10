@@ -1,0 +1,18 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY FxcmBridge.csproj ./
+RUN dotnet restore FxcmBridge.csproj
+COPY . .
+RUN dotnet publish FxcmBridge.csproj -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /app
+COPY --from=build /app/publish ./
+
+# Ensure runtimes/lib are in the image if present
+COPY runtimes ./runtimes
+COPY lib ./lib
+
+ENV LD_LIBRARY_PATH="/app:/app/runtimes:/app/lib"
+EXPOSE 5000
+ENTRYPOINT ["dotnet", "FxcmBridge.dll"]

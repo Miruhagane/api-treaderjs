@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="fxcore2">
+      <HintPath>lib/fxcore2.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="lib/*.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="lib/*.so*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="runtimes/*.so*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

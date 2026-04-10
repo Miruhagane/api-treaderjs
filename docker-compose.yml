@@ -1,0 +1,40 @@
+version: '3.8'
+services:
+  api-node:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    container_name: api-node
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - PORT=3000
+      - NODE_ENV=development
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  fxcm-bridge:
+    build:
+      context: ./microservices/fxcm-bridge/FxcmBridge
+      dockerfile: Dockerfile.fxcm
+    container_name: fxcm-bridge
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/check-fxcm || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  default:
+    name: trading-network

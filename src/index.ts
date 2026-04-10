@@ -10,6 +10,7 @@ import { Parser } from 'json2csv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { dbconection } from './config/db';
+import { registerDashboardNamespace } from './config/db/dashboard';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
@@ -17,10 +18,11 @@ import swaggerSpec from './config/swagger';
 // Importa las funciones de los módulos de broker
 // import { positions, accountBalance, capitalbuyandsell, getprices } from './capital';
 import { positionBuy, positionSell, startBinanceFuturesPositionStream } from './binance';
+import { fxcm } from './fxcm';
 import baseLogger, { getLogger } from './config/logger';
 import loggerMiddleware from './config/loggerMiddleware';
 import expressPino from 'express-pino-logger';
-import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv } from './config/db/dashboard';
+import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv, startTotalGananciaEmitter, computeTotalGanancia } from './config/db/dashboard';
 
 const app = express();
 app.use(cors());
@@ -31,6 +33,12 @@ const io = new Server(httpServer, {
     methods: ["GET", "POST"]
   }
 });
+
+// register dedicated dashboard namespace (separates dashboard socket traffic)
+try {
+  registerDashboardNamespace(io);
+} catch (err) {
+}
 
 const queue = new PQueue({ concurrency: 1 });
 const log = getLogger('index');
@@ -107,12 +115,13 @@ app.post('/binance/sell', (req, res) => {
 
 });
 
+
 /**
  * @swagger
  * /datatable-dashboard:
  *   get:
  *     summary: Obtiene datos para el dashboard
- *     description: Obtiene datos paginados para el dashboard, opcionalmente filtrados por estrategia.
+ *     description: Obtiene datos paginados para el dashboard, opcionalmente filtrados por varios campos.
  *     parameters:
  *       - in: query
  *         name: page
@@ -129,6 +138,53 @@ app.post('/binance/sell', (req, res) => {
  *         schema:
  *           type: string
  *         description: Estrategia para filtrar.
+ *       - in: query
+ *         name: broker
+ *         schema:
+ *           type: string
+ *         description: Broker (ej. binance).
+ *       - in: query
+ *         name: epic
+ *         schema:
+ *           type: string
+ *         description: Epic/símbolo (ej. LTCUSDT).
+ *       - in: query
+ *         name: market
+ *         schema:
+ *           type: string
+ *         description: Tipo de mercado (ej. FUTURE, SPOT).
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *         description: Tipo de operación (buy/sell).
+ *       - in: query
+ *         name: open
+ *         schema:
+ *           type: boolean
+ *         description: Filtrar por posiciones abiertas o cerradas.
+ *       - in: query
+ *         name: dateFrom
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Fecha inicial (ISO) para `myRegionalDate`.
+ *       - in: query
+ *         name: dateTo
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Fecha final (ISO) para `myRegionalDate`.
+ *       - in: query
+ *         name: minGanancia
+ *         schema:
+ *           type: number
+ *         description: Ganancia mínima a filtrar.
+ *       - in: query
+ *         name: maxGanancia
+ *         schema:
+ *           type: number
+ *         description: Ganancia máxima a filtrar.
  *     responses:
  *       200:
  *         description: Datos del dashboard.
@@ -139,9 +195,22 @@ app.post('/binance/sell', (req, res) => {
  */
 app.get('/datatable-dashboard', async (req, res) => {
   const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 5;
-  const strategy = req.query.strategy as string || '';
-  const result = await dashboard(page, limit, strategy);
+  const limit = Math.min(parseInt(req.query.limit as string) || 5, 100);
+
+  const filters = {
+    strategy: req.query.strategy as string || undefined,
+    broker: req.query.broker as string || undefined,
+    epic: req.query.epic as string || undefined,
+    market: req.query.market as string || undefined,
+    type: req.query.type as string || undefined,
+    open: req.query.open === 'true' ? true : req.query.open === 'false' ? false : undefined,
+    dateFrom: req.query.dateFrom as string || undefined,
+    dateTo: req.query.dateTo as string || undefined,
+    minGanancia: req.query.minGanancia ? Number(req.query.minGanancia) : undefined,
+    maxGanancia: req.query.maxGanancia ? Number(req.query.maxGanancia) : undefined,
+  };
+
+  const result = await dashboard(page, limit, filters as any);
   res.json(result);
 });
 
@@ -271,6 +340,19 @@ app.get('/ganancia_broker', async (req, res) => {
   res.json(result);
 });
 
+
+app.post('/fxcm/buy', async (req, res) => {
+  const { epic, size, type, strategy } = req.body;
+  try {
+    const result = await fxcm(epic, size, type, strategy, io);
+    res.status(200).send(result);
+  } catch (error) {
+    const lg = (req as any).logger || log;
+    lg.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación de compra en FXCM');
+    res.status(500).send('Error al realizar la operación de compra en FXCM');
+  }
+});
+
 /**
  * Configuración y manejo de eventos de Socket.IO.
  * Emite eventos de 'dashboard_update' cuando hay cambios en las posiciones.
@@ -281,7 +363,19 @@ app.get('/ganancia_broker', async (req, res) => {
  */
 io.on('connection', (socket) => {
   // logging removed
-  // logging removed
+  // send current total ganancia to the newly connected client
+  (async () => {
+    try {
+      const total = await computeTotalGanancia();
+      socket.emit('dashboard:totalGanancia', { total });
+    } catch (err) {
+      const lg = (socket as any).logger || log;
+      lg.error({ err }, 'Error sending initial totalGanancia to client');
+    }
+  })();
+
+  // no dashboard handlers here — dashboard uses its own namespace (/dashboard)
+
   socket.on('disconnect', () => {
 
   });
@@ -297,20 +391,28 @@ const startServer = async () => {
     // 1. Conectar a la base de datos
     await dbconection();
 
-    // 4. Iniciar stream de posiciones de Binance Futures (WS)
+    // 2. Iniciar streams (Binance, etc.)
     startBinanceFuturesPositionStream(io).catch((err) => {
-      // logging removed
+      // log error
     });
 
-    // 5. Iniciar el servidor HTTP
-    const port = parseInt(process.env.PORT || '3000');
-    httpServer.listen(port, () => {
+    try {
+      startTotalGananciaEmitter(io, 5000);
+    } catch (err) {
+      const lg = getLogger('index');
+      lg.error({ err }, 'Failed to start total ganancia emitter');
+    }
 
-      // logging removed
+    // 3. INICIAR EL SERVIDOR
+    // IMPORTANTE: '0.0.0.0' es vital para que Docker/Railway acepten conexiones externas
+    const port = parseInt(process.env.PORT || '3000');
+
+    httpServer.listen(port, '0.0.0.0', () => {
+      console.log(`🚀 API Node lista en puerto ${port}`);
     });
 
   } catch (error) {
-    // logging removed
+    console.error('❌ Error fatal al iniciar el servidor:', error);
     process.exit(1);
   }
 };

@@ -34,14 +34,7 @@ export type Bindings = { [key: string]: any };
 
 export function getLogger(moduleName = 'app', bindings: Bindings = {}) {
     const child = baseLogger.child({ service: 'api-treaderjs', module: moduleName, ...bindings });
-    // In development, only show console logs for the `binance` module.
-    if (isDev && moduleName !== 'binance') {
-        try {
-            (child as any).level = 'silent';
-        } catch (e) {
-            // ignore
-        }
-    }
+    // Return the child logger for the module. Do not silently mute modules by default.
     return child;
 }
 
