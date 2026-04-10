@@ -192,9 +192,9 @@ app.MapPost("/fxcm/close", async (HttpRequest req) =>
     catch (Exception ex) { return Results.BadRequest(new { success = false, error = ex.Message }); }
 });
 
-var portEnv = Environment.GetEnvironmentVariable("PORT");
-var port = string.IsNullOrEmpty(portEnv) ? "5000" : portEnv;
-app.Run($"http://0.0.0.0:{port}");
+var bridgePort = "5000"; 
+
+app.Run($"http://0.0.0.0:{bridgePort}");
 
 // --- ENDPOINT: HEALTHCHECK (GET /fxcm/health) ---
 app.MapGet("/fxcm/health", () =>
