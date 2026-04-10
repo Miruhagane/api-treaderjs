@@ -75,7 +75,13 @@ app.get('/', (req, res) => {
 app.post('/binance/buy', (req, res) => {
 
   const payload = req.body;
+
+  if (!payload.type && !payload.epic && !payload.size && !payload.strategy) {
+    return res.status(400).send({ error: 'Faltan campos obligatorios' });
+  }
+
   // logging removed
+
 
   queue.add(async () => {
 
@@ -343,6 +349,10 @@ app.get('/ganancia_broker', async (req, res) => {
 
 app.post('/fxcm/buy', async (req, res) => {
   const { epic, size, type, strategy } = req.body;
+
+  if (!type && !epic && !size && !strategy) {
+    return res.status(400).send({ error: 'Faltan campos obligatorios' });
+  }
   try {
     const result = await fxcm(epic, size, type, strategy, io);
     res.status(200).send(result);
