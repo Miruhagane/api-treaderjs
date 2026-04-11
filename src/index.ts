@@ -73,11 +73,6 @@ app.get('/', (req, res) => {
 
 
 app.post('/binance/buy', (req, res) => {
-
-  if (!req.body.epic || !req.body.size || !req.body.type || !req.body.strategy) {
-    return res.status(400).send({ error: 'Faltan campos obligatorios' });
-  }
-
   // logging removed
 
 
@@ -346,10 +341,6 @@ app.get('/ganancia_broker', async (req, res) => {
 
 
 app.post('/fxcm/buy', async (req, res) => {
-
-  if (!req.body.epic || !req.body.size || !req.body.type || !req.body.strategy) {
-    return res.status(400).send({ error: 'Faltan campos obligatorios' });
-  }
 
   const { epic, size, type, strategy } = req.body;
 
