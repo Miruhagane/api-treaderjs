@@ -12,6 +12,20 @@ export async function buyFxcm(epic: string, size: number | string, type: string)
             logger.error({ err, epic, size }, 'Invalid size for FXCM buy');
             throw err;
         }
+        // Check bridge health before attempting to place an order
+        try {
+            const healthResp = await axios.get(`${bridgeUrl}/fxcm/health`, { timeout: 3000 });
+            const connected = healthResp?.data?.connected;
+            if (!connected) {
+                const err = new Error(`FXCM bridge not connected`);
+                logger.error({ err, epic, health: healthResp?.data }, 'FXCM bridge unhealthy');
+                throw err;
+            }
+        } catch (hErr) {
+            // Any error reaching the bridge or unhealthy response should block order placement
+            logger.error({ err: hErr, epic }, 'Failed FXCM bridge health check');
+            throw hErr;
+        }
 
         const orderData = {
             symbol: epic,

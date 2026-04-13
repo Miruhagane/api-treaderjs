@@ -341,20 +341,28 @@ app.get('/ganancia_broker', async (req, res) => {
 
 
 app.post('/fxcm/buy', async (req, res) => {
-
   const { epic, size, type, strategy } = req.body;
 
+  // Convertimos 'size' a número y lo redondeamos a entero después de aplicar el factor
+  // Por ejemplo, si el bridge espera micro-contratos (1.6 -> 160)
+  const numericSize = typeof size === 'string' ? parseFloat(size) : size;
+  const normalizedSize = Math.floor(numericSize * 100);
 
   try {
-    const result = await fxcm(epic, size, type, strategy, io);
+    // Enviamos normalizedSize ya como un número entero
+    const result = await fxcm(epic, normalizedSize, type, strategy, io);
     res.status(200).send(result);
   } catch (error) {
     const lg = (req as any).logger || log;
-    lg.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación de compra en FXCM');
+    lg.error({
+      err: error,
+      epic,
+      size: normalizedSize, // Logueamos el valor convertido para debug
+      route: req.originalUrl
+    }, 'Error en operación de compra en FXCM');
     res.status(500).send('Error al realizar la operación de compra en FXCM');
   }
 });
-
 /**
  * Configuración y manejo de eventos de Socket.IO.
  * Emite eventos de 'dashboard_update' cuando hay cambios en las posiciones.
