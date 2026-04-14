@@ -20,7 +20,7 @@ import swaggerSpec from './config/swagger';
 import { positionBuy, positionSell, startBinanceFuturesPositionStream } from './binance';
 import { fxcm } from './fxcm';
 import baseLogger, { getLogger } from './config/logger';
-import { globalErrorHandler } from './config/loggerMiddleware';
+import { globalErrorHandler, loggerMiddleware } from './config/loggerMiddleware';
 import expressPino from 'express-pino-logger';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv, startTotalGananciaEmitter, computeTotalGanancia } from './config/db/dashboard';
 
@@ -48,6 +48,7 @@ const expressLogger = expressPino({ logger: baseLogger });
 // Middleware para parsear el cuerpo de las solicitudes JSON
 app.use(bodyParser.json());
 app.use(expressLogger);
+app.use(loggerMiddleware);
 app.use(globalErrorHandler);
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
