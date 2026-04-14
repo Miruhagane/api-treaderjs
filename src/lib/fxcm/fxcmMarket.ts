@@ -54,7 +54,7 @@ export async function closeFxcm(id: string | number) {
             throw err;
         }
 
-        const body = { tradeId };
+        const body = { tradeId: String(id) };
         const response = await axios.post(`${bridgeUrl}/fxcm/close`, body, { headers: { 'Content-Type': 'application/json' } });
         return response.data;
     }

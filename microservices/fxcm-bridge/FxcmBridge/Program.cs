@@ -24,9 +24,10 @@ O2GSession session = O2GTransport.createSession();
 session.useTableManager(O2GTableManagerMode.Yes, null);
 
 var pendingOrders = new ConcurrentDictionary<string, TaskCompletionSource<string>>();
+var pendingCloses = new ConcurrentDictionary<string, TaskCompletionSource<ClosedTradeInfo>>();
 
-// --- 3. WATCHER DE TABLAS (Captura TradeID para confirmación) ---
-async Task WatchTablesAsync(ConcurrentDictionary<string, TaskCompletionSource<string>> pending, O2GSession sess)
+// --- 3. WATCHER DE TABLAS (Captura TradeID y cierres para confirmación) ---
+async Task WatchTablesAsync(ConcurrentDictionary<string, TaskCompletionSource<string>> pending, ConcurrentDictionary<string, TaskCompletionSource<ClosedTradeInfo>> pendingCls, O2GSession sess)
 {
     while (true)
     {
@@ -46,13 +47,26 @@ async Task WatchTablesAsync(ConcurrentDictionary<string, TaskCompletionSource<st
                             tcs.TrySetResult(row.TradeID);
                     }
                 }
+
+                var closedTable = (O2GClosedTradesTable)tm.getTable(O2GTableType.ClosedTrades);
+                if (closedTable != null)
+                {
+                    for (int i = 0; i < closedTable.Count; i++)
+                    {
+                        var row = closedTable.getRow(i);
+                        if (pendingCls.TryGetValue(row.TradeID, out var tcs))
+                        {
+                            tcs.TrySetResult(new ClosedTradeInfo(row.OpenRate, row.CloseRate, row.NetPL));
+                        }
+                    }
+                }
             }
         }
         catch { /* Silenciar errores de lectura de tabla */ }
         await Task.Delay(1000);
     }
 }
-_ = Task.Run(() => WatchTablesAsync(pendingOrders, session));
+_ = Task.Run(() => WatchTablesAsync(pendingOrders, pendingCloses, session));
 
 // Bucle de Reconexión Automática
 async Task SessionManagerLoopAsync()
@@ -118,8 +132,8 @@ app.MapPost("/fxcm/order", async (HttpRequest req) =>
         if (factory == null) throw new Exception("No se pudo crear el Request Factory.");
 
         var valueMap = factory.createValueMap();
-        valueMap.setString(O2GRequestParamsEnum.Command, "CreateOrder");
-        valueMap.setString(O2GRequestParamsEnum.OrderType, "OM"); // Orden de Mercado
+        valueMap.setString(O2GRequestParamsEnum.Command, Constants.Commands.CreateOrder);
+        valueMap.setString(O2GRequestParamsEnum.OrderType, Constants.Orders.MarketOpen); // Orden de Mercado
         valueMap.setString(O2GRequestParamsEnum.AccountID, accountId);
         valueMap.setString(O2GRequestParamsEnum.OfferID, offerId);
         valueMap.setString(O2GRequestParamsEnum.BuySell, side.ToLower() == "buy" ? "B" : "S");
@@ -165,7 +179,7 @@ app.MapPost("/fxcm/close", async (HttpRequest req) =>
     try
     {
         using var doc = await System.Text.Json.JsonDocument.ParseAsync(req.Body);
-        var tradeId = doc.RootElement.GetProperty("tradeId").GetString();
+        var tradeId = doc.RootElement.GetProperty("tradeId").ToString();
 
         var tm = session.getTableManager();
         if (tm == null) throw new Exception("TableManager no disponible.");
@@ -184,8 +198,8 @@ app.MapPost("/fxcm/close", async (HttpRequest req) =>
 
         var factory = session.getRequestFactory();
         var valueMap = factory.createValueMap();
-        valueMap.setString(O2GRequestParamsEnum.Command, "CreateOrder");
-        valueMap.setString(O2GRequestParamsEnum.OrderType, "TMC"); // True Market Close
+        valueMap.setString(O2GRequestParamsEnum.Command, Constants.Commands.CreateOrder);
+        valueMap.setString(O2GRequestParamsEnum.OrderType, Constants.Orders.TrueMarketClose); // True Market Close
         valueMap.setString(O2GRequestParamsEnum.AccountID, row.AccountID);
         valueMap.setString(O2GRequestParamsEnum.OfferID, row.OfferID);
         valueMap.setString(O2GRequestParamsEnum.TradeID, tradeId); 
@@ -195,9 +209,25 @@ app.MapPost("/fxcm/close", async (HttpRequest req) =>
         O2GRequest request = factory.createOrderRequest(valueMap);
         if (request == null) throw new Exception($"Error al crear cierre: {factory.getLastError()}");
 
+        // Registrar espera de cierre
+        var tcs = new TaskCompletionSource<ClosedTradeInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+        pendingCloses[tradeId] = tcs;
+
         session.sendRequest(request);
 
-        return Results.Ok(new { success = true, tradeId = tradeId, status = "Close Request Sent" });
+        // Esperar confirmación de cierre (timeout 20s)
+        var completed = await Task.WhenAny(tcs.Task, Task.Delay(20000));
+        ClosedTradeInfo? info = (completed == tcs.Task) ? await tcs.Task : null;
+        pendingCloses.TryRemove(tradeId, out _);
+
+        return Results.Ok(new { 
+            success = true, 
+            tradeId = tradeId, 
+            openPrice = info?.OpenPrice ?? 0,
+            closePrice = info?.ClosePrice ?? 0,
+            netPL = info?.NetPL ?? 0,
+            status = info == null ? "Cierre enviado pero no confirmado en tabla aún." : "Cerrada" 
+        });
     }
     catch (Exception ex) { 
         return Results.BadRequest(new { success = false, error = ex.Message }); 
@@ -210,3 +240,24 @@ app.MapGet("/fxcm/health", () => Results.Ok(new {
 }));
 
 app.Run("http://0.0.0.0:5000");
+
+// --- CLASE DE CONSTANTES (Según Documentación FXCM) ---
+public static class Constants
+{
+    public static class Commands
+    {
+        public const string CreateOrder = "CreateOrder";
+        public const string EditOrder   = "EditOrder";
+        public const string DeleteOrder = "DeleteOrder";
+    }
+    public static class Orders
+    {
+        public const string MarketOpen       = "OM";
+        public const string TrueMarketClose  = "CM";
+        public const string MarketClose      = "CM";
+        public const string LimitOpen        = "OL";
+        public const string StopOpen         = "OS";
+    }
+}
+
+public record ClosedTradeInfo(double OpenPrice, double ClosePrice, double NetPL);

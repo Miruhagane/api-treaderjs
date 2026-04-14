@@ -53,10 +53,25 @@ export async function fxcm(epic: string, size: number, type: string, strategy: s
             if (ordenes.length > 0) {
                 for (const orden of ordenes) {
                     const response = await closeFxcm(orden.idRefBroker);
-                    let data = response.data;
+                    let data = response; 
                     logger.info({ response }, 'FXCM close order response');
 
-                    await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, buyPrice: data.openPrice, sellPrice: data.closePrice, spotsizeSell: orden.size, brokercommissionSell: 0, ganancia: data.netPL } });
+                    // Valores defensivos para evitar crashes
+                    const buyPrice = data?.openPrice || 0;
+                    const sellPrice = data?.closePrice || 0;
+                    const netPL = data?.netPL || 0;
+
+                    await movementsModel.updateOne(
+                        { _id: orden._id }, 
+                        { $set: { 
+                            open: false, 
+                            buyPrice: buyPrice, 
+                            sellPrice: sellPrice, 
+                            spotsizeSell: orden.size, 
+                            brokercommissionSell: 0, 
+                            ganancia: netPL 
+                        }}
+                    );
                 }
             }
 
