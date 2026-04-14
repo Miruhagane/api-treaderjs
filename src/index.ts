@@ -75,8 +75,26 @@ app.get('/', (req, res) => {
 
 app.post('/binance/buy', (req, res) => {
 
-  const payload = req.body;
-  req.logger.info({ payload, route: req.originalUrl }, 'Recibida solicitud de compra en Binance');
+  const { epic, size, type, strategy } = req.body || {};
+
+  if (!epic || !type || !size) {
+    req.logger.warn({
+      body: req.body,
+      ip: req.ip,
+      missingFields: {
+        epic: !epic,
+        type: !type,
+        size: !size
+      }
+    }, 'Payload de compra incompleto o mal estructurado');
+
+    return res.status(400).json({
+      success: false,
+      message: 'Datos insuficientes para ejecutar la orden'
+    });
+  }
+
+  req.logger.info({ epic, size, type, strategy, route: req.originalUrl }, 'Recibida solicitud de compra en Binance');
   // logging removed
 
 
@@ -345,8 +363,26 @@ app.get('/ganancia_broker', async (req, res) => {
 
 
 app.post('/fxcm/buy', async (req, res) => {
-  const { epic, size, type, strategy } = req.body;
-  req.logger.info({ payload: req.body, route: req.originalUrl }, 'Recibida solicitud de compra en FXCM');
+  const { epic, size, type, strategy } = req.body || {};
+
+  if (!epic || !type || !size) {
+    req.logger.warn({
+      body: req.body,
+      ip: req.ip,
+      missingFields: {
+        epic: !epic,
+        type: !type,
+        size: !size
+      }
+    }, 'Payload de compra incompleto o mal estructurado');
+
+    return res.status(400).json({
+      success: false,
+      message: 'Datos insuficientes para ejecutar la orden'
+    });
+  }
+
+  req.logger.info({ epic, size, type, strategy, route: req.originalUrl }, 'Recibida solicitud de compra en FXCM');
   // Convertimos 'size' a número y lo redondeamos a entero después de aplicar el factor
   // Por ejemplo, si el bridge espera micro-contratos (1.6 -> 160)
   const numericSize = typeof size === 'string' ? parseFloat(size) : size;
