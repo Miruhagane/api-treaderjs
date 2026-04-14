@@ -1,30 +1,27 @@
 import { Request, Response, NextFunction } from 'express';
-import { randomBytes } from 'crypto';
-import { getLogger } from './logger';
+import baseLogger from './logger';
 
-declare global {
-    namespace Express {
-        interface Request {
-            logger?: ReturnType<typeof getLogger>;
-            reqId?: string;
-            log?: any;
+export const globalErrorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
+    // Usamos el ID de petición si existe para trazar el error
+    const reqId = req.reqId || 'unknown';
+
+    // Logueamos el error de forma estructurada
+    baseLogger.error({
+        reqId,
+        msg: err.message,
+        stack: process.env.NODE_ENV === 'production' ? undefined : err.stack, // Ocultar stack en producción
+        method: req.method,
+        url: req.originalUrl,
+        err: err // El serializador de tu logger.ts extraerá la data relevante
+    }, 'request_error');
+
+    // Respuesta estandarizada al cliente
+    res.status(err.status || 500).json({
+        success: false,
+        reqId,
+        error: {
+            type: err.name || 'InternalError',
+            message: err.message || 'Ocurrió un error inesperado en el servidor'
         }
-    }
-}
-
-export const loggerMiddleware = (req: Request, _res: Response, next: NextFunction) => {
-    const reqId = randomBytes(6).toString('hex');
-    req.reqId = reqId;
-    const meta = { reqId, method: req.method, route: req.originalUrl };
-
-    if ((req as any).log && typeof (req as any).log.child === 'function') {
-        req.logger = (req as any).log.child({ reqId, module: 'http', service: 'api-treaderjs' });
-    } else {
-        req.logger = getLogger('http', meta);
-    }
-
-    req.logger.info({ req: { method: req.method, url: req.originalUrl } }, 'request_start');
-    next();
+    });
 };
-
-export default loggerMiddleware;

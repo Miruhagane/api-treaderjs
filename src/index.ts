@@ -20,7 +20,7 @@ import swaggerSpec from './config/swagger';
 import { positionBuy, positionSell, startBinanceFuturesPositionStream } from './binance';
 import { fxcm } from './fxcm';
 import baseLogger, { getLogger } from './config/logger';
-import loggerMiddleware from './config/loggerMiddleware';
+import { globalErrorHandler } from './config/loggerMiddleware';
 import expressPino from 'express-pino-logger';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv, startTotalGananciaEmitter, computeTotalGanancia } from './config/db/dashboard';
 
@@ -48,7 +48,7 @@ const expressLogger = expressPino({ logger: baseLogger });
 // Middleware para parsear el cuerpo de las solicitudes JSON
 app.use(bodyParser.json());
 app.use(expressLogger);
-app.use(loggerMiddleware);
+app.use(globalErrorHandler);
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
@@ -73,6 +73,9 @@ app.get('/', (req, res) => {
 
 
 app.post('/binance/buy', (req, res) => {
+
+  const payload = req.body;
+  req.logger.info({ payload, route: req.originalUrl }, 'Recibida solicitud de compra en Binance');
   // logging removed
 
 
@@ -83,8 +86,8 @@ app.post('/binance/buy', (req, res) => {
       res.status(200).send(result);
 
     } catch (error) {
-      const lg = (req as any).logger || log;
-      lg.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación de compra en Binance');
+      const logger = req.logger || baseLogger;
+      logger.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación de compra en Binance');
       res.status(500).send('Error al realizar la operación de compra en Binance');
     }
   });
@@ -342,24 +345,21 @@ app.get('/ganancia_broker', async (req, res) => {
 
 app.post('/fxcm/buy', async (req, res) => {
   const { epic, size, type, strategy } = req.body;
-
+  req.logger.info({ payload: req.body, route: req.originalUrl }, 'Recibida solicitud de compra en FXCM');
   // Convertimos 'size' a número y lo redondeamos a entero después de aplicar el factor
   // Por ejemplo, si el bridge espera micro-contratos (1.6 -> 160)
   const numericSize = typeof size === 'string' ? parseFloat(size) : size;
-  const normalizedSize = Math.floor(numericSize * 100);
+  const normalizedSize = Math.floor(numericSize);
 
   try {
     // Enviamos normalizedSize ya como un número entero
     const result = await fxcm(epic, normalizedSize, type, strategy, io);
     res.status(200).send(result);
   } catch (error) {
-    const lg = (req as any).logger || log;
-    lg.error({
-      err: error,
-      epic,
-      size: normalizedSize, // Logueamos el valor convertido para debug
-      route: req.originalUrl
-    }, 'Error en operación de compra en FXCM');
+    const logger = req.logger || baseLogger;
+
+    logger.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación de compra en FXCM');
+
     res.status(500).send('Error al realizar la operación de compra en FXCM');
   }
 });

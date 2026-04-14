@@ -25,7 +25,7 @@ session.useTableManager(O2GTableManagerMode.Yes, null);
 
 var pendingOrders = new ConcurrentDictionary<string, TaskCompletionSource<string>>();
 
-// --- 3. WATCHER DE TABLAS (Captura TradeID) ---
+// --- 3. WATCHER DE TABLAS (Captura TradeID para confirmación) ---
 async Task WatchTablesAsync(ConcurrentDictionary<string, TaskCompletionSource<string>> pending, O2GSession sess)
 {
     while (true)
@@ -48,25 +48,27 @@ async Task WatchTablesAsync(ConcurrentDictionary<string, TaskCompletionSource<st
                 }
             }
         }
-        catch { }
+        catch { /* Silenciar errores de lectura de tabla */ }
         await Task.Delay(1000);
     }
 }
 _ = Task.Run(() => WatchTablesAsync(pendingOrders, session));
 
-// Bucle de Reconexión
+// Bucle de Reconexión Automática
 async Task SessionManagerLoopAsync()
 {
     while (true)
     {
         try
         {
-            if (session.getSessionStatus() != O2GSessionStatusCode.Connected)
+            if (session.getSessionStatus() != O2GSessionStatusCode.Connected && 
+                session.getSessionStatus() != O2GSessionStatusCode.Connecting)
             {
                 var user = Environment.GetEnvironmentVariable("FXCM_USER");
                 var pass = Environment.GetEnvironmentVariable("FXCM_PASS");
                 if (!string.IsNullOrEmpty(user) && !string.IsNullOrEmpty(pass))
                 {
+                    Console.WriteLine("[FXCM] Intentando conectar...");
                     session.login(user, pass, "http://www.fxcorporate.com/Hosts.jsp", "Demo");
                 }
             }
@@ -78,28 +80,28 @@ async Task SessionManagerLoopAsync()
 _ = Task.Run(() => SessionManagerLoopAsync());
 
 // --- 4. ENDPOINT: ABRIR ORDEN ---
-// Node.js debe enviar: { "symbol": "XAG/USD", "side": "buy", "size": 1.6 }
 app.MapPost("/fxcm/order", async (HttpRequest req) =>
 {
     try
     {
+        Console.WriteLine( req.Path + " - Nueva solicitud de orden recibida." );
         using var doc = await System.Text.Json.JsonDocument.ParseAsync(req.Body);
         var root = doc.RootElement;
         
         string symbol = root.GetProperty("symbol").GetString()!;
         string side   = root.GetProperty("side").GetString()!;
-        double size   = root.GetProperty("size").GetDouble();
+        double size   = root.GetProperty("size").GetDouble(); // Ej: 1.0 para 1k
 
         var tm = session.getTableManager();
         if (tm == null || tm.getStatus() != O2GTableManagerStatus.TablesLoaded)
-            throw new Exception("FXCM TableManager no está listo.");
+            throw new Exception("FXCM TableManager no está listo o las tablas no han cargado.");
 
-        // Seguridad: Validar existencia de cuenta
+        // Obtener ID de cuenta
         var accTable = (O2GAccountsTable)tm.getTable(O2GTableType.Accounts);
-        if (accTable.Count == 0) throw new Exception("No hay cuentas cargadas.");
+        if (accTable.Count == 0) throw new Exception("No hay cuentas disponibles.");
         string accountId = accTable.getRow(0).AccountID;
 
-        // Seguridad: Buscar el OfferID exacto
+        // Buscar OfferID y BaseUnitSize
         var offTable = (O2GOffersTable)tm.getTable(O2GTableType.Offers);
         string? offerId = null;
         for (int i = 0; i < offTable.Count; i++) {
@@ -110,32 +112,51 @@ app.MapPost("/fxcm/order", async (HttpRequest req) =>
             }
         }
 
-        if (string.IsNullOrEmpty(offerId)) throw new Exception($"Símbolo '{symbol}' no encontrado.");
+        if (string.IsNullOrEmpty(offerId)) throw new Exception($"Símbolo '{symbol}' no encontrado en FXCM.");
 
         var factory = session.getRequestFactory();
+        if (factory == null) throw new Exception("No se pudo crear el Request Factory.");
+
         var valueMap = factory.createValueMap();
         valueMap.setString(O2GRequestParamsEnum.Command, "CreateOrder");
-        valueMap.setString(O2GRequestParamsEnum.OrderType, "OM");
+        valueMap.setString(O2GRequestParamsEnum.OrderType, "OM"); // Orden de Mercado
         valueMap.setString(O2GRequestParamsEnum.AccountID, accountId);
         valueMap.setString(O2GRequestParamsEnum.OfferID, offerId);
         valueMap.setString(O2GRequestParamsEnum.BuySell, side.ToLower() == "buy" ? "B" : "S");
-        valueMap.setInt(O2GRequestParamsEnum.Amount, (int)(size * 100)); 
+        
+        // CORRECCIÓN: FXCM usa cantidades enteras (1000 = 1 micro lote).
+        // Si 'size' desde Node es 1.0, enviamos 1000.
+        
+        valueMap.setInt(O2GRequestParamsEnum.Amount, (int)(size)); 
+        
         valueMap.setString(O2GRequestParamsEnum.CustomID, "bot_" + DateTime.Now.Ticks);
 
         O2GRequest request = factory.createOrderRequest(valueMap);
-        if (request == null) throw new Exception("Error interno al crear el request (factory return null).");
+        if (request == null) {
+            throw new Exception($"Error al crear request: {factory.getLastError()}");
+        }
         
         session.sendRequest(request);
 
+        // Esperar confirmación de la tabla de Trades (opcional, timeout 20s)
         var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         pendingOrders[request.RequestID] = tcs;
         var completed = await Task.WhenAny(tcs.Task, Task.Delay(20000));
+        
         string? dealId = (completed == tcs.Task) ? await tcs.Task : null;
         pendingOrders.TryRemove(request.RequestID, out _);
 
-        return Results.Ok(new { success = true, orderId = request.RequestID, dealId = dealId });
+        return Results.Ok(new { 
+            success = true, 
+            orderId = request.RequestID, 
+            dealId = dealId,
+            msg = dealId == null ? "Orden enviada pero no confirmada en tabla aún." : "Ejecutada"
+        });
     }
-    catch (Exception ex) { return Results.BadRequest(new { success = false, error = ex.Message }); }
+    catch (Exception ex) { 
+        Console.WriteLine($"[Order Error] {ex.Message}");
+        return Results.BadRequest(new { success = false, error = ex.Message }); 
+    }
 });
 
 // --- 5. ENDPOINT: CERRAR ORDEN ---
@@ -147,7 +168,9 @@ app.MapPost("/fxcm/close", async (HttpRequest req) =>
         var tradeId = doc.RootElement.GetProperty("tradeId").GetString();
 
         var tm = session.getTableManager();
-        var tradesTable = (O2GTradesTable)tm?.getTable(O2GTableType.Trades)!;
+        if (tm == null) throw new Exception("TableManager no disponible.");
+        
+        var tradesTable = (O2GTradesTable)tm.getTable(O2GTableType.Trades);
         O2GTradeRow? row = null;
 
         for (int i = 0; i < tradesTable.Count; i++) {
@@ -157,12 +180,12 @@ app.MapPost("/fxcm/close", async (HttpRequest req) =>
             }
         }
 
-        if (row == null) throw new Exception($"No se encontró el TradeID {tradeId}");
+        if (row == null) throw new Exception($"No se encontró una posición abierta con ID {tradeId}");
 
         var factory = session.getRequestFactory();
         var valueMap = factory.createValueMap();
         valueMap.setString(O2GRequestParamsEnum.Command, "CreateOrder");
-        valueMap.setString(O2GRequestParamsEnum.OrderType, "TMC"); 
+        valueMap.setString(O2GRequestParamsEnum.OrderType, "TMC"); // True Market Close
         valueMap.setString(O2GRequestParamsEnum.AccountID, row.AccountID);
         valueMap.setString(O2GRequestParamsEnum.OfferID, row.OfferID);
         valueMap.setString(O2GRequestParamsEnum.TradeID, tradeId); 
@@ -170,11 +193,15 @@ app.MapPost("/fxcm/close", async (HttpRequest req) =>
         valueMap.setInt(O2GRequestParamsEnum.Amount, row.Amount);
 
         O2GRequest request = factory.createOrderRequest(valueMap);
+        if (request == null) throw new Exception($"Error al crear cierre: {factory.getLastError()}");
+
         session.sendRequest(request);
 
-        return Results.Ok(new { success = true, tradeId = tradeId });
+        return Results.Ok(new { success = true, tradeId = tradeId, status = "Close Request Sent" });
     }
-    catch (Exception ex) { return Results.BadRequest(new { success = false, error = ex.Message }); }
+    catch (Exception ex) { 
+        return Results.BadRequest(new { success = false, error = ex.Message }); 
+    }
 });
 
 app.MapGet("/fxcm/health", () => Results.Ok(new { 
