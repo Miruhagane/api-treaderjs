@@ -38,7 +38,7 @@ export async function fxcm(epic: string, size: number, type: string, strategy: s
 
             await movementsPartial.save();
 
-            io.emit('dashboard_update', { type: type, strategy: strategy });
+            io.emit('posicion_event', { type: type, strategy: strategy });
             return "posición de compra ejecutada y registros actualizados."
         }
         catch (error) {
@@ -53,7 +53,7 @@ export async function fxcm(epic: string, size: number, type: string, strategy: s
             if (ordenes.length > 0) {
                 for (const orden of ordenes) {
                     const response = await closeFxcm(orden.idRefBroker);
-                    let data = response; 
+                    let data = response;
                     logger.info({ response }, 'FXCM close order response');
 
                     // Valores defensivos para evitar crashes
@@ -62,20 +62,22 @@ export async function fxcm(epic: string, size: number, type: string, strategy: s
                     const netPL = data?.netPL || 0;
 
                     await movementsModel.updateOne(
-                        { _id: orden._id }, 
-                        { $set: { 
-                            open: false, 
-                            buyPrice: buyPrice, 
-                            sellPrice: sellPrice, 
-                            spotsizeSell: orden.size, 
-                            brokercommissionSell: 0, 
-                            ganancia: netPL 
-                        }}
+                        { _id: orden._id },
+                        {
+                            $set: {
+                                open: false,
+                                buyPrice: buyPrice,
+                                sellPrice: sellPrice,
+                                spotsizeSell: orden.size,
+                                brokercommissionSell: 0,
+                                ganancia: netPL
+                            }
+                        }
                     );
                 }
             }
 
-            io.emit('dashboard_update', { type: type, strategy: strategy });
+            io.emit('posicion_event', { type: type, strategy: strategy });
             return "posicion cerrada y registros actualizados."
         }
         catch (error) {

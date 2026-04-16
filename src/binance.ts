@@ -394,7 +394,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                 return "Tipo de mercado no soportado.";
             }
 
-            io.emit('dashboard_update', { type: type, strategy: strategy });
+            io.emit('posicion_event', { type: type, strategy: strategy });
             return " Orden de compra ejecutada y registrada en la base de datos."
 
         }
@@ -465,7 +465,7 @@ export const positionBuy = async (type: string, market: string, epic: string, le
                 return "Tipo de mercado no soportado.";
             }
 
-            io.emit('dashboard_update', { type: type, strategy: strategy });
+            io.emit('posicion_event', { type: type, strategy: strategy });
             return " Orden de venta ejecutada y registros actualizados."
         } catch (error) {
             try {
@@ -513,7 +513,7 @@ export const positionSell = async (type: string, market: string, epic: string, l
 
                 await movementsPartial.save();
 
-                // io.emit('dashboard_update', { type: type, strategy: strategy });
+                // io.emit('posicion_event', { type: type, strategy: strategy });
             }
             else if (market.toUpperCase() === 'FUTURE') {
 
