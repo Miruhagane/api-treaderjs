@@ -115,10 +115,33 @@ export async function dashboard2(page: number = 1, limit: number = 5, filters: D
     const totalMovements = await movementsModel.countDocuments(query);
     const totalPages = Math.ceil(totalMovements / limit);
 
+    // Aggregated stats for the filtered query
+    const statsAggregation = await movementsModel.aggregate([
+        { $match: query },
+        {
+            $group: {
+                _id: null,
+                totalOpen: { $sum: { $cond: [{ $eq: ["$open", true] }, 1, 0] } },
+                totalClosed: { $sum: { $cond: [{ $eq: ["$open", false] }, 1, 0] } },
+                totalGanancia: { $sum: "$ganancia" },
+                totalMargen: { $sum: "$margen" }
+            }
+        }
+    ]);
+
+    const stats = statsAggregation[0] || { totalOpen: 0, totalClosed: 0, totalGanancia: 0, totalMargen: 0 };
+
     return {
         movements,
         totalPages,
-        currentPage: page
+        currentPage: page,
+        stats: {
+            totalTrades: totalMovements,
+            openTrades: stats.totalOpen || 0,
+            closedTrades: stats.totalClosed || 0,
+            totalGanancia: stats.totalGanancia || 0,
+            totalMargen: stats.totalMargen || 0
+        }
     };
 }
 
@@ -584,3 +607,10 @@ async function completarEstrategias(jsonData) {
         return semana;
     });
 }
+
+export async function trades_count() {
+    const mOpen = await movementsModel.find({ open: true })
+    const mClose = await movementsModel.find({ open: false })
+    return { open: mOpen.length, close: mClose.length };
+}
+

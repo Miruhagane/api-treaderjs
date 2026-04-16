@@ -10,7 +10,7 @@ import { Parser } from 'json2csv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { dbconection } from './config/db';
-import { registerDashboardNamespace } from './config/db/dashboard';
+import { registerDashboardNamespace, trades_count } from './config/db/dashboard';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
@@ -73,69 +73,7 @@ app.get('/', (req, res) => {
 });
 
 
-app.post('/binance/buy', (req, res) => {
-
-  const { epic, size, type, strategy } = req.body || {};
-
-  if (!epic || !type || !size) {
-    req.logger.warn({
-      body: req.body,
-      ip: req.ip,
-      missingFields: {
-        epic: !epic,
-        type: !type,
-        size: !size
-      }
-    }, 'Payload de compra incompleto o mal estructurado');
-
-    return res.status(400).json({
-      success: false,
-      message: 'Datos insuficientes para ejecutar la orden'
-    });
-  }
-
-  req.logger.info({ epic, size, type, strategy, route: req.originalUrl }, 'Recibida solicitud de compra en Binance');
-  // logging removed
-
-
-  queue.add(async () => {
-
-    try {
-      const result = await positionBuy(req.body.type, req.body.market, req.body.epic, req.body.leverage, req.body.size, req.body.strategy, io);
-      res.status(200).send(result);
-
-    } catch (error) {
-      const logger = req.logger || baseLogger;
-      logger.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación de compra en Binance');
-      res.status(500).send('Error al realizar la operación de compra en Binance');
-    }
-  });
-
-});
-
-app.post('/binance/sell', (req, res) => {
-
-  const payload = req.body;
-  if (payload.market.toUpperCase() === 'SPOT') {
-    return res.send({ data: 'Operaciones Spot no permitidas' });
-  }
-
-  queue.add(async () => {
-
-    try {
-      // logging removed
-      const result = await positionSell(req.body.type, req.body.market, req.body.epic, req.body.leverage, req.body.size, req.body.strategy);
-      res.status(200).send(result);
-    }
-    catch (error) {
-      const lg = (req as any).logger || log;
-      lg.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación de venta en Binance');
-      res.status(500).send('Error al realizar la operación de venta en Binance');
-    }
-  });
-
-});
-
+// ─── Dashboard ───────────────────────────────────────────────────────────────
 
 /**
  * @swagger
@@ -235,39 +173,13 @@ app.get('/datatable-dashboard', async (req, res) => {
   res.json(result);
 });
 
-/**
- * @swagger
- * /csv:
- *   get:
- *     summary: Exporta los movimientos a CSV
- *     description: Exporta los movimientos a un archivo CSV, opcionalmente filtrados por estrategia.
- *     parameters:
- *       - in: query
- *         name: strategy
- *         schema:
- *           type: string
- *         description: Estrategia para filtrar.
- *     responses:
- *       200:
- *         description: Archivo CSV con los movimientos.
- *         content:
- *           text/csv:
- *             schema:
- *               type: string
- */
-app.get('/csv', async (req, res) => {
-  const strategy = req.query.strategy as string || '';
-  const result = await csv(strategy);
-
-  const fields = ["strategy", "buyPrice", "sellPrice", "ganancia", "broker", "date"];
-  const parser = new Parser({ fields });
-  const document = parser.parse(result);
-
-  res.header("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", "attachment; filename=movimientos.csv");
-  return res.send(document);
+app.get('/active_trades', async (req, res) => {
+  const result = await trades_count();
+  res.json(result);
 })
 
+
+// ─── Analíticas ───────────────────────────────────────────────────────────────
 
 /**
  * @swagger
@@ -361,6 +273,110 @@ app.get('/ganancia_broker', async (req, res) => {
   res.json(result);
 });
 
+
+// ─── Exportación ─────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /csv:
+ *   get:
+ *     summary: Exporta los movimientos a CSV
+ *     description: Exporta los movimientos a un archivo CSV, opcionalmente filtrados por estrategia.
+ *     parameters:
+ *       - in: query
+ *         name: strategy
+ *         schema:
+ *           type: string
+ *         description: Estrategia para filtrar.
+ *     responses:
+ *       200:
+ *         description: Archivo CSV con los movimientos.
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ */
+app.get('/csv', async (req, res) => {
+  const strategy = req.query.strategy as string || '';
+  const result = await csv(strategy);
+
+  const fields = ["strategy", "buyPrice", "sellPrice", "ganancia", "broker", "date"];
+  const parser = new Parser({ fields });
+  const document = parser.parse(result);
+
+  res.header("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", "attachment; filename=movimientos.csv");
+  return res.send(document);
+})
+
+
+// ─── Trading – Binance ────────────────────────────────────────────────────────
+
+app.post('/binance/buy', (req, res) => {
+
+  const { epic, size, type, strategy } = req.body || {};
+
+  if (!epic || !type || !size) {
+    req.logger.warn({
+      body: req.body,
+      ip: req.ip,
+      missingFields: {
+        epic: !epic,
+        type: !type,
+        size: !size
+      }
+    }, 'Payload de compra incompleto o mal estructurado');
+
+    return res.status(400).json({
+      success: false,
+      message: 'Datos insuficientes para ejecutar la orden'
+    });
+  }
+
+  req.logger.info({ epic, size, type, strategy, route: req.originalUrl }, 'Recibida solicitud de compra en Binance');
+  // logging removed
+
+
+  queue.add(async () => {
+
+    try {
+      const result = await positionBuy(req.body.type, req.body.market, req.body.epic, req.body.leverage, req.body.size, req.body.strategy, io);
+      res.status(200).send(result);
+
+    } catch (error) {
+      const logger = req.logger || baseLogger;
+      logger.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación de compra en Binance');
+      res.status(500).send('Error al realizar la operación de compra en Binance');
+    }
+  });
+
+});
+
+app.post('/binance/sell', (req, res) => {
+
+  const payload = req.body;
+  if (payload.market.toUpperCase() === 'SPOT') {
+    return res.send({ data: 'Operaciones Spot no permitidas' });
+  }
+
+  queue.add(async () => {
+
+    try {
+      // logging removed
+      const result = await positionSell(req.body.type, req.body.market, req.body.epic, req.body.leverage, req.body.size, req.body.strategy);
+      res.status(200).send(result);
+    }
+    catch (error) {
+      const lg = (req as any).logger || log;
+      lg.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación de venta en Binance');
+      res.status(500).send('Error al realizar la operación de venta en Binance');
+    }
+  });
+
+});
+
+
+// ─── Trading – FXCM ──────────────────────────────────────────────────────────
 
 app.post('/fxcm/buy', async (req, res) => {
   const { epic, size, type, strategy } = req.body || {};
