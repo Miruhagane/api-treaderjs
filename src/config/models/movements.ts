@@ -23,6 +23,9 @@ export class movements {
     @prop({ required: false })
     market: string
 
+    @prop({ required: false })
+    executionMode?: string
+
     /**
      * Indicates if the movement is open.
      */

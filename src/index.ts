@@ -17,7 +17,7 @@ import swaggerSpec from './config/swagger';
 
 // Importa las funciones de los módulos de broker
 // import { positions, accountBalance, capitalbuyandsell, getprices } from './capital';
-import { positionBuy, positionSell, startBinanceFuturesPositionStream } from './binance';
+import { positionBuy, positionContinuous, positionSell, startBinanceFuturesPositionStream } from './binance';
 import { fxcm } from './fxcm';
 import baseLogger, { getLogger } from './config/logger';
 import { globalErrorHandler, loggerMiddleware } from './config/loggerMiddleware';
@@ -373,6 +373,42 @@ app.post('/binance/sell', (req, res) => {
     }
   });
 
+});
+
+app.post('/binance/continuous', (req, res) => {
+  const { epic, size, type, strategy, market } = req.body || {};
+  const normalizedType = String(type || '').toUpperCase();
+
+  if (!epic || !type || !strategy || !market) {
+    req.logger.warn({
+      body: req.body,
+      ip: req.ip,
+      missingFields: {
+        epic: !epic,
+        type: !type,
+        strategy: !strategy,
+        market: !market
+      }
+    }, 'Payload de posición continua incompleto o mal estructurado');
+
+    return res.status(400).json({
+      success: false,
+      message: 'Datos insuficientes para ejecutar la posición continua'
+    });
+  }
+
+  req.logger.info({ epic, size, type, strategy, market, route: req.originalUrl }, 'Recibida solicitud de posición continua en Binance');
+
+  queue.add(async () => {
+    try {
+      const result = await positionContinuous(type, market, epic, req.body.leverage, req.body.size, strategy, io);
+      res.status(200).send(result);
+    } catch (error) {
+      const logger = req.logger || baseLogger;
+      logger.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación continua de Binance');
+      res.status(500).send('Error al realizar la operación continua en Binance');
+    }
+  });
 });
 
 

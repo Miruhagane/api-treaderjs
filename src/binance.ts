@@ -85,6 +85,30 @@ let futuresListenKeyKeepAliveTimer: NodeJS.Timeout | null = null;
 let futuresReconnectTimer: NodeJS.Timeout | null = null;
 let futuresStreamStarted = false;
 const openPositionsCache = new Map<string, number>();
+const CONTINUOUS_EXECUTION_MODE = 'CONTINUOUS';
+
+function getContinuousPositionsFilter(epic: string, strategy: string, market: string) {
+    return {
+        broker: 'binance',
+        epic,
+        strategy,
+        market: String(market).toUpperCase(),
+        open: true,
+        executionMode: CONTINUOUS_EXECUTION_MODE,
+    };
+}
+
+function markOpenPosition(symbol: string) {
+    const normalizedSymbol = String(symbol || '').toUpperCase();
+    if (!normalizedSymbol) return;
+    openPositionsCache.set(normalizedSymbol, (openPositionsCache.get(normalizedSymbol) || 0) + 1);
+}
+
+function buildRegionalDate() {
+    const regionalDate = new Date();
+    regionalDate.setHours(regionalDate.getHours() - 5);
+    return regionalDate;
+}
 
 async function refreshOpenPositionsCache() {
     const openPositions = await movementsModel.find(
@@ -668,4 +692,225 @@ export const positionSell = async (type: string, market: string, epic: string, l
         }
 
     }
+}
+
+export const positionContinuous = async (type: string, market: string, epic: string, leverage: number, quantity: number, strategy: string, io: Server) => {
+    const normalizedType = String(type || '').toUpperCase();
+    const normalizedMarket = String(market || '').toUpperCase();
+    const normalizedEpic = String(epic || '').toUpperCase();
+    const continuousFilter = getContinuousPositionsFilter(normalizedEpic, strategy, normalizedMarket);
+    const continuousOrders = await movementsModel.find(continuousFilter).sort({ date: -1 });
+    const currentOpenType = continuousOrders.length > 0 ? String(continuousOrders[0].type || '').toUpperCase() : null;
+    const isOpenRequest = !currentOpenType || currentOpenType === normalizedType;
+
+    if (normalizedType !== 'BUY' && normalizedType !== 'SELL') {
+        return 'Tipo de operación no soportado.';
+    }
+
+    if (isOpenRequest) {
+        try {
+            const parsedQuantity = Number(quantity);
+            if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
+                return 'La cantidad para la posición continua debe ser mayor a 0.';
+            }
+
+            if (normalizedMarket === 'SPOT') {
+                const order = await binanceMarket(normalizedEpic, parsedQuantity, normalizedType);
+
+                const movementsPartial = new movementsModel({
+                    idRefBroker: order.orderId,
+                    strategy,
+                    market: normalizedMarket,
+                    executionMode: CONTINUOUS_EXECUTION_MODE,
+                    type: normalizedType,
+                    margen: 0,
+                    size: Number(order.qty).toFixed(5) || 0,
+                    spotsizeSell: 0,
+                    epic: normalizedEpic,
+                    open: true,
+                    buyPrice: Number(order.price),
+                    sellPrice: 0,
+                    brokercommission: Number(order.commission).toFixed(8) || 0,
+                    brokercommissionSell: 0,
+                    ganancia: 0,
+                    broker: 'binance',
+                    date: new Date(),
+                    myRegionalDate: buildRegionalDate()
+                });
+
+                await movementsPartial.save();
+                markOpenPosition(normalizedEpic);
+            }
+            else if (normalizedMarket === 'FUTURE') {
+                await futures.setLeverage({ symbol: normalizedEpic, leverage: leverage });
+
+                const order = await futures.submitNewOrder({ symbol: normalizedEpic, side: normalizedType, type: 'MARKET', quantity: parsedQuantity });
+                const orderAny: any = order;
+                const orderId = orderAny?.orderId ?? orderAny?.orderIdStr ?? orderAny?.data?.orderId ?? null;
+                let position: any = null;
+
+                if (orderId) {
+                    try {
+                        position = await futures.getOrder({ symbol: normalizedEpic, orderId: orderId });
+                    } catch (err: any) {
+                        const msg = String(err?.message || err?.msg || '');
+                        safeLogError('futures.getOrder ERROR', { err, epic: normalizedEpic, orderId });
+                        if (msg.includes('Order does not exist') || msg.includes('order does not exist')) {
+                            try {
+                                const trades = await futures.getAccountTrades({ symbol: normalizedEpic });
+                                const cierre = trades.filter((trade: any) => String(trade.orderId) === String(orderId));
+                                if (cierre && cierre.length > 0) {
+                                    const totalQty = cierre.reduce((acc: number, trade: any) => acc + Number(trade.qty || 0), 0);
+                                    const totalQuote = cierre.reduce((acc: number, trade: any) => acc + Number(trade.quoteQty || trade.quote || 0), 0);
+                                    position = { orderId, cumQuote: totalQuote, executedQty: totalQty };
+                                } else {
+                                    position = { orderId, cumQuote: orderAny?.cumQuote ?? orderAny?.executedQty ?? 0 };
+                                }
+                            } catch (rebuildError) {
+                                safeLogError('rebuild continuous position from trades ERROR', rebuildError);
+                                position = { orderId, cumQuote: orderAny?.cumQuote ?? 0 };
+                            }
+                        } else {
+                            throw err;
+                        }
+                    }
+                } else {
+                    safeLogError('continuous submitNewOrder returned no orderId', { order, epic: normalizedEpic, quantity: parsedQuantity, strategy });
+                    try {
+                        const trades = await futures.getAccountTrades({ symbol: normalizedEpic });
+                        const recent = trades.slice(-5);
+                        const totalQuote = recent.reduce((acc: number, trade: any) => acc + Number(trade.quoteQty || trade.quote || 0), 0);
+                        position = { orderId: null, cumQuote: totalQuote };
+                    } catch (recentTradesError) {
+                        position = { orderId: null, cumQuote: 0 };
+                    }
+                }
+
+                if (!position || !position.orderId) {
+                    try {
+                        safeLogError('positionContinuous FUTURE missing position', { order, position, epic: normalizedEpic, quantity: parsedQuantity, strategy });
+                        await errorSendEmail('positionContinuous FUTURE missing position', JSON.stringify({ order, position, epic: normalizedEpic, quantity: parsedQuantity, strategy }, null, 2));
+                    } catch (notificationError) {
+                    }
+                }
+
+                const movement = new movementsModel({
+                    idRefBroker: position?.orderId ?? orderId ?? orderAny?.orderId ?? null,
+                    strategy,
+                    market: normalizedMarket,
+                    executionMode: CONTINUOUS_EXECUTION_MODE,
+                    type: normalizedType,
+                    margen: leverage,
+                    size: parsedQuantity,
+                    epic: normalizedEpic,
+                    open: true,
+                    buyPrice: position?.cumQuote ?? orderAny?.cumQuote ?? 0,
+                    sellPrice: 0,
+                    ganancia: 0,
+                    broker: 'binance',
+                    date: new Date(),
+                    myRegionalDate: buildRegionalDate()
+                });
+
+                await movement.save();
+                markOpenPosition(normalizedEpic);
+            }
+            else {
+                return 'Tipo de mercado no soportado.';
+            }
+
+            io.emit('posicion_event', { type: normalizedType, strategy, epic: normalizedEpic, market: normalizedMarket, executionMode: CONTINUOUS_EXECUTION_MODE });
+            return `Posición continua ${normalizedType} ejecutada y registrada correctamente.`;
+        }
+        catch (error: any) {
+            try {
+                safeLogError(`positionContinuous ${normalizedType} OPEN ERROR`, error);
+                await errorSendEmail(`positionContinuous ${normalizedType} OPEN ERROR`, JSON.stringify({ message: error?.message, stack: error?.stack, epic: normalizedEpic, strategy, market: normalizedMarket }, null, 2));
+            } catch (notificationError) {
+            }
+            throw error;
+        }
+    }
+
+    if (currentOpenType && currentOpenType !== normalizedType) {
+        try {
+            const ordenes = continuousOrders;
+
+            if (ordenes.length === 0) {
+                return 'No hay posiciones continuas abiertas para ese epic, strategy y market.';
+            }
+
+            if (normalizedMarket === 'SPOT') {
+                for (const orden of ordenes) {
+                    const binanceOrder = await binanceMarket(normalizedEpic, Number(orden.size), normalizedType);
+                    const ganancia = currentOpenType === 'BUY'
+                        ? (Number(binanceOrder.price) - Number(orden.buyPrice)) * Number(orden.size)
+                        : (Number(orden.buyPrice) - Number(binanceOrder.price)) * Number(orden.size);
+
+                    await movementsModel.updateOne(
+                        { _id: orden._id },
+                        {
+                            $set: {
+                                open: false,
+                                sellPrice: binanceOrder.price,
+                                spotsizeSell: binanceOrder.qty,
+                                brokercommissionSell: binanceOrder.commission,
+                                ganancia: Number(ganancia).toFixed(5)
+                            }
+                        }
+                    );
+                }
+            }
+            else if (normalizedMarket === 'FUTURE') {
+                for (const orden of ordenes) {
+                    const order = await futures.submitNewOrder({ symbol: normalizedEpic, side: normalizedType, type: 'MARKET', quantity: Number(orden.size) });
+                    const trades = await futures.getAccountTrades({ symbol: normalizedEpic });
+                    const cierre = trades.filter((trade: any) => String(trade.orderId) === String((order as any).orderId));
+
+                    if (!cierre || cierre.length === 0) {
+                        try {
+                            safeLogError(`positionContinuous FUTURE ${normalizedType} no trades for order`, { order, trades, ordenId: orden._id, epic: normalizedEpic });
+                            await errorSendEmail(`positionContinuous FUTURE ${normalizedType} no trades for order`, JSON.stringify({ order, trades, ordenId: orden._id, epic: normalizedEpic }, null, 2));
+                        } catch (notificationError) {
+                        }
+
+                        await movementsModel.updateOne({ _id: orden._id }, { $set: { open: false, sellPrice: 0, ganancia: 0 } });
+                        continue;
+                    }
+
+                    const totalQty = cierre.reduce((acc: number, trade: any) => acc + Number(trade.qty), 0);
+                    const totalQuote = cierre.reduce((acc: number, trade: any) => acc + Number(trade.quoteQty), 0);
+                    const avgPrice = totalQty === 0 ? 0 : totalQuote / totalQty;
+                    const totalPnl = cierre.reduce((acc: number, trade: any) => acc + Number(trade.realizedPnl), 0);
+
+                    await movementsModel.updateOne(
+                        { _id: orden._id },
+                        {
+                            $set: {
+                                open: false,
+                                sellPrice: avgPrice,
+                                ganancia: totalPnl
+                            }
+                        }
+                    );
+                }
+            }
+            else {
+                return 'Tipo de mercado no soportado.';
+            }
+
+            await refreshOpenPositionsCache();
+            io.emit('posicion_event', { type: normalizedType, strategy, epic: normalizedEpic, market: normalizedMarket, executionMode: CONTINUOUS_EXECUTION_MODE });
+            return `Posiciones continuas ${currentOpenType} cerradas con ${normalizedType} correctamente.`;
+        } catch (error: any) {
+            try {
+                safeLogError(`positionContinuous ${normalizedType} CLOSE ERROR`, error);
+                await errorSendEmail(`positionContinuous ${normalizedType} CLOSE ERROR`, JSON.stringify({ message: error?.message, stack: error?.stack, epic: normalizedEpic, strategy, market: normalizedMarket }, null, 2));
+            } catch (notificationError) {
+            }
+            throw error;
+        }
+    }
+
+    return `Las posiciones continuas abiertas en ${normalizedEpic} con strategy ${strategy} deben cerrarse con ${currentOpenType === 'BUY' ? 'SELL' : 'BUY'}.`;
 }
