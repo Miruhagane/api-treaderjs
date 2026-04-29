@@ -3,6 +3,30 @@ import { getLogger } from "../../config/logger";
 const logger = getLogger('fxcmbridge');
 const bridgeUrl = process.env.BRIDGE_URL || "http://localhost:5000";
 
+// --- Health check cache ---
+// Avoids an extra HTTP round-trip on every order.
+// The bridge is considered healthy for HEALTH_TTL_MS after a successful check.
+const HEALTH_TTL_MS = 30_000;
+let lastHealthCheck = 0;
+let lastHealthOk = false;
+
+async function ensureBridgeHealthy(): Promise<void> {
+    const now = Date.now();
+    if (lastHealthOk && now - lastHealthCheck < HEALTH_TTL_MS) return;
+
+    const healthResp = await axios.get(`${bridgeUrl}/fxcm/health`, { timeout: 3000 });
+    const connected = healthResp?.data?.connected;
+    lastHealthCheck = Date.now();
+    lastHealthOk = !!connected;
+
+    if (!connected) {
+        lastHealthOk = false;
+        const err = new Error(`FXCM bridge not connected`);
+        logger.error({ err, health: healthResp?.data }, 'FXCM bridge unhealthy');
+        throw err;
+    }
+}
+
 export async function buyFxcm(epic: string, size: number | string, type: string) {
 
     try {
@@ -12,17 +36,10 @@ export async function buyFxcm(epic: string, size: number | string, type: string)
             logger.error({ err, epic, size }, 'Invalid size for FXCM buy');
             throw err;
         }
-        // Check bridge health before attempting to place an order
+
         try {
-            const healthResp = await axios.get(`${bridgeUrl}/fxcm/health`, { timeout: 3000 });
-            const connected = healthResp?.data?.connected;
-            if (!connected) {
-                const err = new Error(`FXCM bridge not connected`);
-                logger.error({ err, epic, health: healthResp?.data }, 'FXCM bridge unhealthy');
-                throw err;
-            }
+            await ensureBridgeHealthy();
         } catch (hErr) {
-            // Any error reaching the bridge or unhealthy response should block order placement
             logger.error({ err: hErr, epic }, 'Failed FXCM bridge health check');
             throw hErr;
         }
