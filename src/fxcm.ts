@@ -60,19 +60,15 @@ export async function fxcm(epic: string, size: number, type: string, strategy: s
                     const sellPrice = response?.closePrice || 0;
                     const netPL = response?.netPL || 0;
 
-                    await movementsModel.updateOne(
-                        { _id: orden._id },
-                        {
-                            $set: {
-                                open: false,
-                                buyPrice,
-                                sellPrice,
-                                spotsizeSell: orden.size,
-                                brokercommissionSell: 0,
-                                ganancia: netPL
-                            }
-                        }
-                    );
+                    const updateFields: Record<string, any> = {
+                        open: false,
+                        buyPrice,
+                        sellPrice,
+                        spotsizeSell: orden.size,
+                        brokercommissionSell: 0,
+                        ganancia: netPL
+                    };
+                    await movementsModel.updateOne({ _id: orden._id }, { $set: updateFields });
                 }));
             }
 
@@ -165,19 +161,15 @@ export async function fxcmContinuous(epic: string, size: number, type: string, s
         const sellPrice = closeData?.closePrice ?? closeData?.data?.closePrice ?? 0;
         const netPL = closeData?.netPL ?? closeData?.data?.netPL ?? closeData?.data?.grossPL ?? 0;
 
-        await movementsModel.updateOne(
-            { _id: orden._id },
-            {
-                $set: {
-                    open: false,
-                    buyPrice,
-                    sellPrice,
-                    spotsizeSell: orden.size,
-                    brokercommissionSell: 0,
-                    ganancia: netPL
-                }
-            }
-        );
+        const updateFields: Record<string, any> = {
+            open: false,
+            buyPrice,
+            sellPrice,
+            spotsizeSell: orden.size,
+            brokercommissionSell: 0,
+            ganancia: netPL
+        };
+        await movementsModel.updateOne({ _id: orden._id }, { $set: updateFields });
     }));
 
     io.emit('posicion_event', { type: normalizedType, strategy, epic: normalizedEpic, market: normalizedMarket, executionMode: CONTINUOUS_EXECUTION_MODE });
