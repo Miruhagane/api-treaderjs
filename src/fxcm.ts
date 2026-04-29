@@ -52,7 +52,7 @@ export async function fxcm(epic: string, size: number, type: string, strategy: s
         try {
             const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'FXCM', market: 'FUTURE' }).sort({ date: -1 });
             if (ordenes.length > 0) {
-                await Promise.all(ordenes.map(async (orden): Promise<void> => {
+                await Promise.all(ordenes.map(async (orden: any): Promise<void> => {
                     const response = await closeFxcm(orden.idRefBroker);
                     logger.info({ response }, 'FXCM close order response');
 
@@ -152,7 +152,7 @@ export async function fxcmContinuous(epic: string, size: number, type: string, s
         return `Posición continua FXCM ${normalizedType} ejecutada y registrada correctamente.`;
     }
 
-    await Promise.all(continuousOrders.map(async (orden): Promise<void> => {
+    await Promise.all(continuousOrders.map(async (orden: any): Promise<void> => {
         const response = await closeFxcm(orden.idRefBroker);
         logger.info({ response, ordenId: orden._id, idRefBroker: orden.idRefBroker, normalizedEpic }, 'FXCM continuous close response');
 
