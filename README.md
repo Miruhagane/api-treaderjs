@@ -84,15 +84,22 @@ La API estará disponible en `http://localhost:3000`.
 
 ## ⚙️ API Endpoints
 
-Aquí están los endpoints disponibles en la API:
+Aquí están los endpoints disponibles en la API (también visibles en Swagger en `/api-docs`):
 
 | Método | Ruta                  | Descripción                                                              | Body (Payload) de Ejemplo                                    |
 |--------|-----------------------|--------------------------------------------------------------------------|--------------------------------------------------------------|
 | `GET`  | `/`                   | Endpoint de health check para verificar si el servidor está activo.      | N/A                                                          |
-| `GET`  | `/capital_balance`    | Obtiene el balance de la cuenta de Capital.com.                          | N/A                                                          |
-| `GET`  | `/capital_active`     | Verifica el estado de la sesión con Capital.com y devuelve los tokens.   | N/A                                                          |
-| `POST` | `/capital_position`   | Abre o cierra una posición en Capital.com.                               | `{ "epic": "BTCUSD", "size": 0.01, "type": "buy", "strategy": "ema_cross" }` |
-| `POST` | `/binance`            | Abre o cierra una posición en Binance.                                   | `{ "type": "BUY", "strategy": "mi_estrategia" }`             |
+| `GET`  | `/datatable-dashboard`| Devuelve movimientos paginados con filtros (dashboard).                  | N/A                                                          |
+| `GET`  | `/active_trades`      | Devuelve conteo de trades activos.                                       | N/A                                                          |
+| `GET`  | `/ganancia_estrategia`| Ganancia agregada por estrategia.                                        | N/A                                                          |
+| `GET`  | `/ganancia_linechart` | Serie para gráfica de ganancia (diaria/mensual).                         | N/A                                                          |
+| `GET`  | `/ganancia_broker`    | Ganancia agregada por broker.                                            | N/A                                                          |
+| `GET`  | `/csv`                | Exporta movimientos a CSV.                                               | N/A                                                          |
+| `POST` | `/binance/buy`        | Ejecuta orden de apertura en Binance (SPOT/FUTURE).                      | `{ "epic": "BTCUSDT", "size": 0.001, "type": "BUY", "strategy": "ema_cross", "market": "FUTURE", "leverage": 10 }` |
+| `POST` | `/binance/sell`       | Ejecuta cierre de posiciones en Binance (principalmente FUTURE).         | `{ "epic": "BTCUSDT", "size": 0.001, "type": "SELL", "strategy": "ema_cross", "market": "FUTURE", "leverage": 10 }` |
+| `POST` | `/binance/continuous` | Modo continuo: abre una posición o cierra la opuesta por `epic/strategy/market`. | `{ "epic": "BTCUSDT", "size": 0.001, "type": "BUY", "strategy": "ema_cross", "market": "FUTURE", "leverage": 10 }` |
+| `POST` | `/fxcm/buy`           | Abre operación en FXCM vía bridge.                                       | `{ "epic": "BTC/USD", "size": 1, "type": "BUY", "strategy": "ema_cross" }` |
+| `POST` | `/fxcm/continuous`    | Modo continuo en FXCM: abre posición o cierra la opuesta por `epic/strategy/market`. | `{ "epic": "BTC/USD", "size": 1, "type": "BUY", "strategy": "ema_cross", "market": "FUTURE" }` |
 
 ## 🧪 Testing
 

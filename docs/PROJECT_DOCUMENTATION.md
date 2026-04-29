@@ -80,6 +80,98 @@ docker-compose up --build
 
 ## Ejemplos rápidos
 
+## Endpoints Node API (Trading)
+
+Base local: `http://localhost:3000`
+
+Swagger UI: `http://localhost:3000/api-docs`
+
+### Endpoints GET (dashboard/analítica)
+
+- `GET /`
+- `GET /datatable-dashboard`
+- `GET /active_trades`
+- `GET /ganancia_estrategia`
+- `GET /ganancia_linechart`
+- `GET /ganancia_broker`
+- `GET /csv`
+
+### Endpoints POST (trading)
+
+- `POST /binance/buy`
+  - Descripción: abre una posición en Binance (SPOT/FUTURE).
+  - Body ejemplo:
+
+```json
+{
+  "epic": "BTCUSDT",
+  "size": 0.001,
+  "type": "BUY",
+  "strategy": "ema_cross",
+  "market": "FUTURE",
+  "leverage": 10
+}
+```
+
+- `POST /binance/sell`
+  - Descripción: cierra posiciones abiertas en Binance (uso principal en FUTURE).
+  - Body ejemplo:
+
+```json
+{
+  "epic": "BTCUSDT",
+  "size": 0.001,
+  "type": "SELL",
+  "strategy": "ema_cross",
+  "market": "FUTURE",
+  "leverage": 10
+}
+```
+
+- `POST /binance/continuous`
+  - Descripción: modo continuo. Si no hay posición abierta del mismo tipo para `epic + strategy + market`, abre una nueva. Si existe una posición abierta del tipo opuesto, la cierra.
+  - Body mínimo recomendado: `epic`, `size`, `type`, `strategy`, `market`.
+  - Body ejemplo:
+
+```json
+{
+  "epic": "BTCUSDT",
+  "size": 0.001,
+  "type": "BUY",
+  "strategy": "ema_cross",
+  "market": "FUTURE",
+  "leverage": 10
+}
+```
+
+- `POST /fxcm/buy`
+  - Descripción: ejecuta orden vía bridge FXCM.
+  - Body ejemplo:
+
+```json
+{
+  "epic": "BTC/USD",
+  "size": 1,
+  "type": "BUY",
+  "strategy": "ema_cross"
+}
+```
+
+- `POST /fxcm/continuous`
+  - Descripción: modo continuo en FXCM. Abre si no hay abierta del mismo tipo y cierra si hay una del tipo opuesto para `epic + strategy + market`.
+  - Nota: actualmente soporta `market = FUTURE`.
+  - Body ejemplo:
+
+```json
+{
+  "epic": "BTC/USD",
+  "size": 1,
+  "type": "BUY",
+  "strategy": "ema_cross",
+  "market": "FUTURE"
+}
+```
+
 Abrir orden (PowerShell):
 
 ```powershell

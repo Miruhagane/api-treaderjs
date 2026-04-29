@@ -3,6 +3,7 @@ import { Server } from "socket.io";
 import { getLogger } from "./config/logger";
 import movementsModel from "./config/models/movements";
 const logger = getLogger('fxcm');
+const CONTINUOUS_EXECUTION_MODE = 'CONTINUOUS';
 
 
 export async function fxcm(epic: string, size: number, type: string, strategy: string, io: Server) {
@@ -84,4 +85,102 @@ export async function fxcm(epic: string, size: number, type: string, strategy: s
             console.error('Error en la función fxcm:', error);
         }
     }
+}
+
+export async function fxcmContinuous(epic: string, size: number, type: string, strategy: string, io: Server, market: string = 'FUTURE') {
+    const normalizedType = String(type || '').toUpperCase();
+    const normalizedEpic = String(epic || '').toUpperCase();
+    const normalizedMarket = String(market || 'FUTURE').toUpperCase();
+
+    if (normalizedType !== 'BUY' && normalizedType !== 'SELL') {
+        return 'Tipo de operación no soportado.';
+    }
+
+    if (!normalizedEpic) {
+        return 'Epic es requerido.';
+    }
+
+    if (normalizedMarket !== 'FUTURE') {
+        return 'FXCM continuous solo soporta mercado FUTURE.';
+    }
+
+    const parsedSize = Number(size);
+    if (!Number.isFinite(parsedSize) || parsedSize <= 0) {
+        return 'La cantidad para FXCM continuous debe ser mayor a 0.';
+    }
+
+    const continuousFilter = {
+        broker: 'FXCM',
+        epic: normalizedEpic,
+        strategy,
+        market: normalizedMarket,
+        open: true,
+        executionMode: CONTINUOUS_EXECUTION_MODE,
+    };
+
+    const continuousOrders = await movementsModel.find(continuousFilter).sort({ date: -1 });
+    const currentOpenType = continuousOrders.length > 0 ? String(continuousOrders[0].type || '').toUpperCase() : null;
+    const isOpenRequest = !currentOpenType || currentOpenType === normalizedType;
+
+    if (isOpenRequest) {
+        const response = await buyFxcm(normalizedEpic, parsedSize, normalizedType);
+        logger.info({ response, normalizedEpic, parsedSize, normalizedType, strategy }, 'FXCM continuous open response');
+
+        const dealId = String(response?.dealId ?? response?.orderId ?? '').trim();
+        if (!dealId) {
+            throw new Error('FXCM continuous open: no dealId/orderId returned');
+        }
+
+        const movement = new movementsModel({
+            idRefBroker: dealId,
+            strategy,
+            market: normalizedMarket,
+            executionMode: CONTINUOUS_EXECUTION_MODE,
+            type: normalizedType,
+            margen: 0,
+            size: Number(parsedSize).toFixed(5) || 0,
+            spotsizeSell: 0,
+            epic: normalizedEpic,
+            open: true,
+            buyPrice: 0,
+            sellPrice: 0,
+            brokercommission: 0,
+            brokercommissionSell: 0,
+            ganancia: 0,
+            broker: 'FXCM',
+            date: new Date(),
+            myRegionalDate: new Date().setHours(new Date().getHours() - 5)
+        });
+
+        await movement.save();
+        io.emit('posicion_event', { type: normalizedType, strategy, epic: normalizedEpic, market: normalizedMarket, executionMode: CONTINUOUS_EXECUTION_MODE });
+        return `Posición continua FXCM ${normalizedType} ejecutada y registrada correctamente.`;
+    }
+
+    for (const orden of continuousOrders) {
+        const response = await closeFxcm(orden.idRefBroker);
+        logger.info({ response, ordenId: orden._id, idRefBroker: orden.idRefBroker, normalizedEpic }, 'FXCM continuous close response');
+
+        const closeData = response?.data ?? response;
+        const buyPrice = closeData?.openPrice ?? closeData?.data?.openPrice ?? 0;
+        const sellPrice = closeData?.closePrice ?? closeData?.data?.closePrice ?? 0;
+        const netPL = closeData?.netPL ?? closeData?.data?.netPL ?? closeData?.data?.grossPL ?? 0;
+
+        await movementsModel.updateOne(
+            { _id: orden._id },
+            {
+                $set: {
+                    open: false,
+                    buyPrice,
+                    sellPrice,
+                    spotsizeSell: orden.size,
+                    brokercommissionSell: 0,
+                    ganancia: netPL
+                }
+            }
+        );
+    }
+
+    io.emit('posicion_event', { type: normalizedType, strategy, epic: normalizedEpic, market: normalizedMarket, executionMode: CONTINUOUS_EXECUTION_MODE });
+    return `Posiciones continuas FXCM ${currentOpenType} cerradas con ${normalizedType} correctamente.`;
 }

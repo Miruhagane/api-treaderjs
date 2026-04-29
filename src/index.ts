@@ -18,7 +18,7 @@ import swaggerSpec from './config/swagger';
 // Importa las funciones de los módulos de broker
 // import { positions, accountBalance, capitalbuyandsell, getprices } from './capital';
 import { positionBuy, positionContinuous, positionSell, startBinanceFuturesPositionStream } from './binance';
-import { fxcm } from './fxcm';
+import { fxcm, fxcmContinuous } from './fxcm';
 import baseLogger, { getLogger } from './config/logger';
 import { globalErrorHandler, loggerMiddleware } from './config/loggerMiddleware';
 import expressPino from 'express-pino-logger';
@@ -312,6 +312,48 @@ app.get('/csv', async (req, res) => {
 
 // ─── Trading – Binance ────────────────────────────────────────────────────────
 
+/**
+ * @swagger
+ * /binance/buy:
+ *   post:
+ *     summary: Ejecuta una orden de apertura en Binance
+ *     description: Abre una posición en Binance para mercado SPOT o FUTURE según el payload.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [epic, size, type]
+ *             properties:
+ *               epic:
+ *                 type: string
+ *                 example: BTCUSDT
+ *               size:
+ *                 type: number
+ *                 example: 0.001
+ *               type:
+ *                 type: string
+ *                 enum: [BUY, SELL]
+ *                 example: BUY
+ *               strategy:
+ *                 type: string
+ *                 example: ema_cross
+ *               market:
+ *                 type: string
+ *                 enum: [SPOT, FUTURE]
+ *                 example: FUTURE
+ *               leverage:
+ *                 type: integer
+ *                 example: 10
+ *     responses:
+ *       200:
+ *         description: Orden ejecutada correctamente.
+ *       400:
+ *         description: Payload inválido o incompleto.
+ *       500:
+ *         description: Error al ejecutar la orden.
+ */
 app.post('/binance/buy', (req, res) => {
 
   const { epic, size, type, strategy } = req.body || {};
@@ -352,6 +394,46 @@ app.post('/binance/buy', (req, res) => {
 
 });
 
+/**
+ * @swagger
+ * /binance/sell:
+ *   post:
+ *     summary: Ejecuta cierre de posiciones en Binance
+ *     description: Cierra posiciones abiertas en Binance en mercado FUTURE según tipo y estrategia.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [type, market, strategy]
+ *             properties:
+ *               type:
+ *                 type: string
+ *                 enum: [BUY, SELL]
+ *                 example: SELL
+ *               market:
+ *                 type: string
+ *                 enum: [SPOT, FUTURE]
+ *                 example: FUTURE
+ *               strategy:
+ *                 type: string
+ *                 example: ema_cross
+ *               epic:
+ *                 type: string
+ *                 example: BTCUSDT
+ *               size:
+ *                 type: number
+ *                 example: 0.001
+ *               leverage:
+ *                 type: integer
+ *                 example: 10
+ *     responses:
+ *       200:
+ *         description: Orden de cierre ejecutada correctamente.
+ *       500:
+ *         description: Error al ejecutar la orden.
+ */
 app.post('/binance/sell', (req, res) => {
 
   const payload = req.body;
@@ -375,6 +457,51 @@ app.post('/binance/sell', (req, res) => {
 
 });
 
+/**
+ * @swagger
+ * /binance/continuous:
+ *   post:
+ *     summary: Ejecuta modo continuo en Binance
+ *     description: |
+ *       Gestiona posiciones continuas por `epic`, `strategy` y `market`.
+ *       Si no hay posición abierta del tipo solicitado, abre una nueva.
+ *       Si existe una posición continua abierta del tipo opuesto, la cierra con una orden de mercado.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [epic, size, type, strategy, market]
+ *             properties:
+ *               epic:
+ *                 type: string
+ *                 example: BTCUSDT
+ *               size:
+ *                 type: number
+ *                 example: 0.001
+ *               type:
+ *                 type: string
+ *                 enum: [BUY, SELL]
+ *                 example: BUY
+ *               strategy:
+ *                 type: string
+ *                 example: ema_cross
+ *               market:
+ *                 type: string
+ *                 enum: [SPOT, FUTURE]
+ *                 example: FUTURE
+ *               leverage:
+ *                 type: integer
+ *                 example: 10
+ *     responses:
+ *       200:
+ *         description: Operación continua ejecutada correctamente.
+ *       400:
+ *         description: Payload inválido o incompleto.
+ *       500:
+ *         description: Error al ejecutar la operación continua.
+ */
 app.post('/binance/continuous', (req, res) => {
   const { epic, size, type, strategy, market } = req.body || {};
   const normalizedType = String(type || '').toUpperCase();
@@ -450,6 +577,82 @@ app.post('/fxcm/buy', async (req, res) => {
     logger.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación de compra en FXCM');
 
     res.status(500).send('Error al realizar la operación de compra en FXCM');
+  }
+});
+
+/**
+ * @swagger
+ * /fxcm/continuous:
+ *   post:
+ *     summary: Ejecuta modo continuo en FXCM
+ *     description: |
+ *       Gestiona posiciones continuas por `epic`, `strategy` y `market` (FXCM soporta `FUTURE`).
+ *       Si no hay posición continua abierta del tipo solicitado, abre una nueva.
+ *       Si existe una posición continua abierta del tipo opuesto, la cierra.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [epic, size, type, strategy]
+ *             properties:
+ *               epic:
+ *                 type: string
+ *                 example: BTC/USD
+ *               size:
+ *                 type: number
+ *                 example: 1
+ *               type:
+ *                 type: string
+ *                 enum: [BUY, SELL]
+ *                 example: BUY
+ *               strategy:
+ *                 type: string
+ *                 example: ema_cross
+ *               market:
+ *                 type: string
+ *                 enum: [FUTURE]
+ *                 example: FUTURE
+ *     responses:
+ *       200:
+ *         description: Operación continua ejecutada correctamente.
+ *       400:
+ *         description: Payload inválido o incompleto.
+ *       500:
+ *         description: Error al ejecutar la operación continua.
+ */
+app.post('/fxcm/continuous', async (req, res) => {
+  const { epic, size, type, strategy, market } = req.body || {};
+
+  if (!epic || !type || !size || !strategy) {
+    req.logger.warn({
+      body: req.body,
+      ip: req.ip,
+      missingFields: {
+        epic: !epic,
+        size: !size,
+        type: !type,
+        strategy: !strategy,
+      }
+    }, 'Payload de continuous FXCM incompleto o mal estructurado');
+
+    return res.status(400).json({
+      success: false,
+      message: 'Datos insuficientes para ejecutar la operación continua en FXCM'
+    });
+  }
+
+  const numericSize = typeof size === 'string' ? parseFloat(size) : size;
+  const normalizedSize = Math.floor(numericSize);
+
+  try {
+    const result = await fxcmContinuous(epic, normalizedSize, type, strategy, io, market || 'FUTURE');
+    res.status(200).send(result);
+  } catch (error) {
+    const logger = req.logger || baseLogger;
+    logger.error({ err: error, route: req.originalUrl, reqId: (req as any).reqId }, 'Error en operación continua de FXCM');
+    res.status(500).send('Error al realizar la operación continua de FXCM');
   }
 });
 /**
