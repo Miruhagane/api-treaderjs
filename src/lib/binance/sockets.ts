@@ -32,7 +32,10 @@ class BinanceMarket extends EventEmitter {
 
     unsubscribe(sym: string) {
         const s = sym.toLowerCase();
-        if (this.symbols.delete(s)) this.scheduleRebuild();
+        if (this.symbols.delete(s)) {
+            this.prices.delete(sym.toUpperCase());
+            this.scheduleRebuild();
+        }
     }
 
     getPrice(sym: string) {
@@ -133,14 +136,16 @@ class BinanceMarket extends EventEmitter {
             this.wsMap.delete(idx);
             if (info.pingInterval) clearInterval(info.pingInterval);
             if (!this.closedByUser) {
+                const delay = info.reconnectMs;
+                info.reconnectMs = Math.min(info.reconnectMs * 1.5, 30000);
                 setTimeout(() => {
-                    // if symbols still map to this chunk index, reconnect
+                    // Guard again: stop() may have been called while the timer was pending
+                    if (this.closedByUser) return;
                     const symbolsArr = Array.from(this.symbols);
                     const start = idx * CHUNK_SIZE;
                     const chunk = symbolsArr.slice(start, start + CHUNK_SIZE);
                     if (chunk.length) this.connectChunk(idx, chunk);
-                    info.reconnectMs = Math.min(info.reconnectMs * 1.5, 30000);
-                }, info.reconnectMs);
+                }, delay);
             }
             this.emit('disconnected', { idx });
         });

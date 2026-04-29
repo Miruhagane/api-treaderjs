@@ -235,12 +235,15 @@ export async function csv(strategy: string) {
 const dashboardSubscribers: Map<Socket, { page?: number; limit?: number; filters?: DashboardFilters; requestId?: any }> = new Map();
 
 export function subscribeDashboardSocket(socket: Socket, opts: { page?: number; limit?: number; filters?: DashboardFilters; requestId?: any } = {}) {
+    const isNew = !dashboardSubscribers.has(socket);
     dashboardSubscribers.set(socket, opts);
 
-    // cleanup on disconnect
-    socket.once('disconnect', () => {
-        dashboardSubscribers.delete(socket);
-    });
+    // Register cleanup listener only on first subscription to avoid listener accumulation
+    if (isNew) {
+        socket.once('disconnect', () => {
+            dashboardSubscribers.delete(socket);
+        });
+    }
 
     // send immediate snapshot
     (async () => {
@@ -609,8 +612,10 @@ async function completarEstrategias(jsonData) {
 }
 
 export async function trades_count() {
-    const mOpen = await movementsModel.find({ open: true })
-    const mClose = await movementsModel.find({ open: false })
-    return { open: mOpen.length, close: mClose.length };
+    const [open, close] = await Promise.all([
+        movementsModel.countDocuments({ open: true }),
+        movementsModel.countDocuments({ open: false }),
+    ]);
+    return { open, close };
 }
 
