@@ -80,10 +80,11 @@ async Task SessionManagerLoopAsync()
             {
                 var user = Environment.GetEnvironmentVariable("FXCM_USER");
                 var pass = Environment.GetEnvironmentVariable("FXCM_PASS");
+                var env = Environment.GetEnvironmentVariable("FXCM_ENV") ?? "Demo";
                 if (!string.IsNullOrEmpty(user) && !string.IsNullOrEmpty(pass))
                 {
-                    Console.WriteLine("[FXCM] Intentando conectar...");
-                    session.login(user, pass, "http://www.fxcorporate.com/Hosts.jsp", "Demo");
+                    Console.WriteLine($"[FXCM] Intentando conectar a entorno: {env}...");
+                    session.login(user, pass, "http://www.fxcorporate.com/Hosts.jsp", env);
                 }
             }
         }
@@ -144,6 +145,8 @@ app.MapPost("/fxcm/order", async (HttpRequest req) =>
         valueMap.setInt(O2GRequestParamsEnum.Amount, (int)(size)); 
         
         valueMap.setString(O2GRequestParamsEnum.CustomID, "bot_" + DateTime.Now.Ticks);
+
+        Console.WriteLine(valueMap);
 
         O2GRequest request = factory.createOrderRequest(valueMap);
         if (request == null) {
