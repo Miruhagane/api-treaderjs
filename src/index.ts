@@ -7,6 +7,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import PQueue from 'p-queue';
 import { Parser } from 'json2csv';
+import { format as csvFormat } from 'fast-csv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { dbconection } from './config/db';
@@ -300,14 +301,22 @@ app.get('/csv', async (req, res) => {
   const strategy = req.query.strategy as string || '';
   const result = await csv(strategy);
 
-  const fields = ["strategy", "buyPrice", "sellPrice", "ganancia", "broker", "date"];
-  const parser = new Parser({ fields });
-  const document = parser.parse(result);
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=movimientos.csv');
 
-  res.header("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", "attachment; filename=movimientos.csv");
-  return res.send(document);
-})
+  const csvStream = csvFormat({ headers: true });
+  csvStream.pipe(res);
+
+  try {
+    for (const row of result) {
+      csvStream.write(row);
+    }
+  } catch (err) {
+    csvStream.emit('error', err);
+  } finally {
+    csvStream.end();
+  }
+});
 
 
 // ─── Trading – Binance ────────────────────────────────────────────────────────

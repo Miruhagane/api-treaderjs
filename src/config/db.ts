@@ -17,7 +17,12 @@ export async function dbconection() {
         if (!process.env.MongoDb_Conection) {
             throw new Error("La variable MongoDb_Conection está VACÍA en el sistema.");
         }
-        await mongoose.connect(process.env.MongoDb_Conection);
+        await mongoose.connect(process.env.MongoDb_Conection, {
+            maxPoolSize: Number(process.env.MONGO_MAX_POOL_SIZE) || 20,
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 45000,
+            family: 4,
+        });
         log.info('Conexión a la base de datos establecida correctamente.');
     } catch (error) {
         log.error('Error al conectar a la base de datos:', error);

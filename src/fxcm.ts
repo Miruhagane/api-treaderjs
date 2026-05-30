@@ -16,6 +16,7 @@ export async function fxcm(epic: string, size: number, type: string, strategy: s
             if (!response.success) {
                 logger.error({ response }, 'FXCM order failed');
             }
+            
 
             const movementsPartial = new movementsModel({
                 idRefBroker: response.dealId,
@@ -52,24 +53,40 @@ export async function fxcm(epic: string, size: number, type: string, strategy: s
         try {
             const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'FXCM', market: 'FUTURE' }).sort({ date: -1 });
             if (ordenes.length > 0) {
-                await Promise.all(ordenes.map(async (orden: any): Promise<void> => {
-                    const response = await closeFxcm(orden.idRefBroker);
-                    logger.info({ response }, 'FXCM close order response');
+                const closePromises = ordenes.map(async (orden: any) => {
+                    try {
+                        const response = await closeFxcm(orden.idRefBroker);
+                        logger.info({ response }, 'FXCM close order response');
+                        const buyPrice = response?.openPrice || 0;
+                        const sellPrice = response?.closePrice || 0;
+                        const netPL = response?.netPL || 0;
+                        return { orden, buyPrice, sellPrice, netPL };
+                    } catch (err) {
+                        logger.error({ err, ordenId: orden._id }, 'Error closing FXCM order for orden');
+                        return { orden, error: err };
+                    }
+                });
 
-                    const buyPrice = response?.openPrice || 0;
-                    const sellPrice = response?.closePrice || 0;
-                    const netPL = response?.netPL || 0;
-
-                    const updateFields: Record<string, any> = {
-                        open: false,
-                        buyPrice,
-                        sellPrice,
-                        spotsizeSell: orden.size,
-                        brokercommissionSell: 0,
-                        ganancia: netPL
-                    };
-                    await movementsModel.updateOne({ _id: orden._id }, { $set: updateFields });
+                const results = await Promise.all(closePromises);
+                const bulkOps: any[] = results.filter(r => !r.error).map(r => ({
+                    updateOne: {
+                        filter: { _id: r.orden._id },
+                        update: {
+                            $set: {
+                                open: false,
+                                buyPrice: r.buyPrice,
+                                sellPrice: r.sellPrice,
+                                spotsizeSell: r.orden.size,
+                                brokercommissionSell: 0,
+                                ganancia: r.netPL
+                            }
+                        }
+                    }
                 }));
+
+                if (bulkOps.length > 0) {
+                    await movementsModel.bulkWrite(bulkOps);
+                }
             }
 
             io.emit('posicion_event', { type: type, strategy: strategy });
@@ -152,25 +169,41 @@ export async function fxcmContinuous(epic: string, size: number, type: string, s
         return `Posición continua FXCM ${normalizedType} ejecutada y registrada correctamente.`;
     }
 
-    await Promise.all(continuousOrders.map(async (orden: any): Promise<void> => {
-        const response = await closeFxcm(orden.idRefBroker);
-        logger.info({ response, ordenId: orden._id, idRefBroker: orden.idRefBroker, normalizedEpic }, 'FXCM continuous close response');
+    const closePromises = continuousOrders.map(async (orden: any) => {
+        try {
+            const response = await closeFxcm(orden.idRefBroker);
+            logger.info({ response, ordenId: orden._id, idRefBroker: orden.idRefBroker, normalizedEpic }, 'FXCM continuous close response');
 
-        const closeData = response?.data ?? response;
-        const buyPrice = closeData?.openPrice ?? closeData?.data?.openPrice ?? 0;
-        const sellPrice = closeData?.closePrice ?? closeData?.data?.closePrice ?? 0;
-        const netPL = closeData?.netPL ?? closeData?.data?.netPL ?? closeData?.data?.grossPL ?? 0;
+            const closeData = response?.data ?? response;
+            const buyPrice = closeData?.openPrice ?? closeData?.data?.openPrice ?? 0;
+            const sellPrice = closeData?.closePrice ?? closeData?.data?.closePrice ?? 0;
+            const netPL = closeData?.netPL ?? closeData?.data?.netPL ?? closeData?.data?.grossPL ?? 0;
 
-        const updateFields: Record<string, any> = {
-            open: false,
-            buyPrice,
-            sellPrice,
-            spotsizeSell: orden.size,
-            brokercommissionSell: 0,
-            ganancia: netPL
-        };
-        await movementsModel.updateOne({ _id: orden._id }, { $set: updateFields });
+            return { orden, buyPrice, sellPrice, netPL };
+        } catch (err) {
+            logger.error({ err, ordenId: orden._id, idRefBroker: orden.idRefBroker }, 'Error closing continuous FXCM order');
+            return { orden, error: err };
+        }
+    });
+
+    const results = await Promise.all(closePromises);
+    const bulkOps: any[] = results.filter(r => !r.error).map(r => ({
+        updateOne: {
+            filter: { _id: r.orden._id },
+            update: {
+                $set: {
+                    open: false,
+                    buyPrice: r.buyPrice,
+                    sellPrice: r.sellPrice,
+                    spotsizeSell: r.orden.size,
+                    brokercommissionSell: 0,
+                    ganancia: r.netPL
+                }
+            }
+        }
     }));
+
+    if (bulkOps.length > 0) await movementsModel.bulkWrite(bulkOps);
 
     io.emit('posicion_event', { type: normalizedType, strategy, epic: normalizedEpic, market: normalizedMarket, executionMode: CONTINUOUS_EXECUTION_MODE });
     return `Posiciones continuas FXCM ${currentOpenType} cerradas con ${normalizedType} correctamente.`;

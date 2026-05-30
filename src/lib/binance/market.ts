@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from '../../config/http';
 import { getLogger } from '../../config/logger';
 const log = getLogger('market');
 import crypto from 'crypto';

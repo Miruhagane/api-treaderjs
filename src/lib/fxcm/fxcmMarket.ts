@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios from "../../config/http";
 import { getLogger } from "../../config/logger";
 const logger = getLogger('fxcmbridge');
 const bridgeUrl = process.env.BRIDGE_URL || "http://localhost:5000";
