@@ -24,6 +24,7 @@ import baseLogger, { getLogger } from './config/logger';
 import { globalErrorHandler, loggerMiddleware } from './config/loggerMiddleware';
 import expressPino from 'express-pino-logger';
 import { dashboard, totalGananciaPorEstrategia, totalGananciaPorBroker, gananciaAgrupadaPorEstrategia, csv, startTotalGananciaEmitter, computeTotalGanancia } from './config/db/dashboard';
+import { validate, binanceBuySchema, binanceSellSchema, binanceContinuousSchema, fxcmBuySchema, fxcmContinuousSchema } from './config/validation';
 
 const app = express();
 app.use(cors());
@@ -363,30 +364,9 @@ app.get('/csv', async (req, res) => {
  *       500:
  *         description: Error al ejecutar la orden.
  */
-app.post('/binance/buy', (req, res) => {
+app.post('/binance/buy', validate(binanceBuySchema), (req, res) => {
 
-  const { epic, size, type, strategy } = req.body || {};
-
-  if (!epic || !type || !size) {
-    req.logger.warn({
-      body: req.body,
-      ip: req.ip,
-      missingFields: {
-        epic: !epic,
-        type: !type,
-        size: !size
-      }
-    }, 'Payload de compra incompleto o mal estructurado');
-
-    return res.status(400).json({
-      success: false,
-      message: 'Datos insuficientes para ejecutar la orden'
-    });
-  }
-
-  req.logger.info({ epic, size, type, strategy, route: req.originalUrl }, 'Recibida solicitud de compra en Binance');
-  // logging removed
-
+  req.logger.info({ ...req.body, route: req.originalUrl }, 'Recibida solicitud de compra en Binance');
 
   queue.add(async () => {
 
@@ -443,17 +423,11 @@ app.post('/binance/buy', (req, res) => {
  *       500:
  *         description: Error al ejecutar la orden.
  */
-app.post('/binance/sell', (req, res) => {
-
-  const payload = req.body;
-  if (payload.market.toUpperCase() === 'SPOT') {
-    return res.send({ data: 'Operaciones Spot no permitidas' });
-  }
+app.post('/binance/sell', validate(binanceSellSchema), (req, res) => {
 
   queue.add(async () => {
 
     try {
-      // logging removed
       const result = await positionSell(req.body.type, req.body.market, req.body.epic, req.body.leverage, req.body.size, req.body.strategy);
       res.status(200).send(result);
     }
@@ -511,33 +485,13 @@ app.post('/binance/sell', (req, res) => {
  *       500:
  *         description: Error al ejecutar la operación continua.
  */
-app.post('/binance/continuous', (req, res) => {
-  const { epic, size, type, strategy, market } = req.body || {};
-  const normalizedType = String(type || '').toUpperCase();
+app.post('/binance/continuous', validate(binanceContinuousSchema), (req, res) => {
 
-  if (!epic || !type || !strategy || !market) {
-    req.logger.warn({
-      body: req.body,
-      ip: req.ip,
-      missingFields: {
-        epic: !epic,
-        type: !type,
-        strategy: !strategy,
-        market: !market
-      }
-    }, 'Payload de posición continua incompleto o mal estructurado');
-
-    return res.status(400).json({
-      success: false,
-      message: 'Datos insuficientes para ejecutar la posición continua'
-    });
-  }
-
-  req.logger.info({ epic, size, type, strategy, market, route: req.originalUrl }, 'Recibida solicitud de posición continua en Binance');
+  req.logger.info({ ...req.body, route: req.originalUrl }, 'Recibida solicitud de posición continua en Binance');
 
   queue.add(async () => {
     try {
-      const result = await positionContinuous(type, market, epic, req.body.leverage, req.body.size, strategy, io);
+      const result = await positionContinuous(req.body.type, req.body.market, req.body.epic, req.body.leverage, req.body.size, req.body.strategy, io);
       res.status(200).send(result);
     } catch (error) {
       const logger = req.logger || baseLogger;
@@ -550,35 +504,12 @@ app.post('/binance/continuous', (req, res) => {
 
 // ─── Trading – FXCM ──────────────────────────────────────────────────────────
 
-app.post('/fxcm/buy', async (req, res) => {
-  const { epic, size, type, strategy } = req.body || {};
+app.post('/fxcm/buy', validate(fxcmBuySchema), async (req, res) => {
 
-  if (!epic || !type || !size) {
-    req.logger.warn({
-      body: req.body,
-      ip: req.ip,
-      missingFields: {
-        epic: !epic,
-        type: !type,
-        size: !size
-      }
-    }, 'Payload de compra incompleto o mal estructurado');
-
-    return res.status(400).json({
-      success: false,
-      message: 'Datos insuficientes para ejecutar la orden'
-    });
-  }
-
-  req.logger.info({ epic, size, type, strategy, route: req.originalUrl }, 'Recibida solicitud de compra en FXCM');
-  // Convertimos 'size' a número y lo redondeamos a entero después de aplicar el factor
-  // Por ejemplo, si el bridge espera micro-contratos (1.6 -> 160)
-  const numericSize = typeof size === 'string' ? parseFloat(size) : size;
-  const normalizedSize = Math.floor(numericSize);
+  req.logger.info({ ...req.body, route: req.originalUrl }, 'Recibida solicitud de compra en FXCM');
 
   try {
-    // Enviamos normalizedSize ya como un número entero
-    const result = await fxcm(epic, normalizedSize, type, strategy, io);
+    const result = await fxcm(req.body.epic, req.body.size, req.body.type, req.body.strategy, io);
     res.status(200).send(result);
   } catch (error) {
     const logger = req.logger || baseLogger;
@@ -631,32 +562,12 @@ app.post('/fxcm/buy', async (req, res) => {
  *       500:
  *         description: Error al ejecutar la operación continua.
  */
-app.post('/fxcm/continuous', async (req, res) => {
-  const { epic, size, type, strategy, market } = req.body || {};
+app.post('/fxcm/continuous', validate(fxcmContinuousSchema), async (req, res) => {
 
-  if (!epic || !type || !size || !strategy) {
-    req.logger.warn({
-      body: req.body,
-      ip: req.ip,
-      missingFields: {
-        epic: !epic,
-        size: !size,
-        type: !type,
-        strategy: !strategy,
-      }
-    }, 'Payload de continuous FXCM incompleto o mal estructurado');
-
-    return res.status(400).json({
-      success: false,
-      message: 'Datos insuficientes para ejecutar la operación continua en FXCM'
-    });
-  }
-
-  const numericSize = typeof size === 'string' ? parseFloat(size) : size;
-  const normalizedSize = Math.floor(numericSize);
+  req.logger.info({ ...req.body, route: req.originalUrl }, 'Recibida solicitud de posición continua en FXCM');
 
   try {
-    const result = await fxcmContinuous(epic, normalizedSize, type, strategy, io, market || 'FUTURE');
+    const result = await fxcmContinuous(req.body.epic, req.body.size, req.body.type, req.body.strategy, io, req.body.market || 'FUTURE');
     res.status(200).send(result);
   } catch (error) {
     const logger = req.logger || baseLogger;

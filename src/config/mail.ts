@@ -5,7 +5,7 @@ const log = getLogger('mail');
 dotenv.config();
 
 
-const resend = new Resend('re_LGhVwTB9_Gubdv1meDToKGaCQMUjfGLgM');
+const resend = new Resend(process.env.RESEND_API_KEY || '');
 
 
 /**

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("FxcmBridge")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+66c3ac0d54399c3b148718393967f43c1c7d8dee")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+86e4e70cd98075de331c093bc63d7c36ca8c6f5d")]
 [assembly: System.Reflection.AssemblyProductAttribute("FxcmBridge")]
 [assembly: System.Reflection.AssemblyTitleAttribute("FxcmBridge")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
