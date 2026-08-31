@@ -52,9 +52,9 @@ export async function fxcm(epic: string, size: number, type: string, strategy: s
         try {
             const ordenes = await movementsModel.find({ strategy: strategy, open: true, broker: 'FXCM', market: 'FUTURE' }).sort({ date: -1 });
             if (ordenes.length > 0) {
-                await Promise.all(ordenes.map(async (orden: any): Promise<void> => {
+                const results: PromiseSettledResult<{ ordenId: any; success: boolean }>[] = await Promise.allSettled(ordenes.map(async (orden: any) => {
                     const response = await closeFxcm(orden.idRefBroker);
-                    logger.info({ response }, 'FXCM close order response');
+                    logger.info({ response, ordenId: orden._id, idRefBroker: orden.idRefBroker }, 'FXCM close order response');
 
                     const buyPrice = response?.openPrice || 0;
                     const sellPrice = response?.closePrice || 0;
@@ -66,10 +66,37 @@ export async function fxcm(epic: string, size: number, type: string, strategy: s
                         sellPrice,
                         spotsizeSell: orden.size,
                         brokercommissionSell: 0,
-                        ganancia: netPL
+                        ganancia: netPL,
+                        closeRequestId: response?.requestId ?? null,
+                        closedAt: new Date()
                     };
                     await movementsModel.updateOne({ _id: orden._id }, { $set: updateFields });
+                    return { ordenId: orden._id, success: true };
                 }));
+
+                const failed: { r: PromiseRejectedResult; orden: any }[] = [];
+                results.forEach((r, i) => {
+                    if (r.status === 'rejected') {
+                        failed.push({ r: r as PromiseRejectedResult, orden: ordenes[i] });
+                    }
+                });
+
+                if (failed.length > 0) {
+                    logger.error(
+                        { failed: failed.map(f => ({ ordenId: f.orden._id, idRefBroker: f.orden.idRefBroker, reason: f.r.reason?.message })) },
+                        'Algunas posiciones no pudieron cerrarse en FXCM'
+                    );
+                    for (const f of failed) {
+                        io.emit('posicion_event', {
+                            type: type,
+                            strategy: strategy,
+                            error: true,
+                            ordenId: f.orden._id,
+                            idRefBroker: f.orden.idRefBroker,
+                            reason: f.r.reason?.message
+                        });
+                    }
+                }
             }
 
             io.emit('posicion_event', { type: type, strategy: strategy });
@@ -156,10 +183,9 @@ export async function fxcmContinuous(epic: string, size: number, type: string, s
         const response = await closeFxcm(orden.idRefBroker);
         logger.info({ response, ordenId: orden._id, idRefBroker: orden.idRefBroker, normalizedEpic }, 'FXCM continuous close response');
 
-        const closeData = response?.data ?? response;
-        const buyPrice = closeData?.openPrice ?? closeData?.data?.openPrice ?? 0;
-        const sellPrice = closeData?.closePrice ?? closeData?.data?.closePrice ?? 0;
-        const netPL = closeData?.netPL ?? closeData?.data?.netPL ?? closeData?.data?.grossPL ?? 0;
+        const buyPrice = response?.openPrice || 0;
+        const sellPrice = response?.closePrice || 0;
+        const netPL = response?.netPL || 0;
 
         const updateFields: Record<string, any> = {
             open: false,
@@ -167,7 +193,9 @@ export async function fxcmContinuous(epic: string, size: number, type: string, s
             sellPrice,
             spotsizeSell: orden.size,
             brokercommissionSell: 0,
-            ganancia: netPL
+            ganancia: netPL,
+            closeRequestId: response?.requestId ?? null,
+            closedAt: new Date()
         };
         await movementsModel.updateOne({ _id: orden._id }, { $set: updateFields });
     }));

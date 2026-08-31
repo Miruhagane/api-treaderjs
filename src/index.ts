@@ -44,7 +44,7 @@ const queue = new PQueue({ concurrency: 1 });
 const log = getLogger('index');
 const expressLogger = expressPino({ logger: baseLogger });
 
-
+  
 // Middleware para parsear el cuerpo de las solicitudes JSON
 app.use(bodyParser.json());
 app.use(expressLogger);
@@ -622,6 +622,7 @@ app.post('/fxcm/buy', async (req, res) => {
  *       500:
  *         description: Error al ejecutar la operación continua.
  */
+
 app.post('/fxcm/continuous', async (req, res) => {
   const { epic, size, type, strategy, market } = req.body || {};
 
